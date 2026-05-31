@@ -53,7 +53,6 @@ async def _execute_search(
     if category:
         base_params["categories"] = category
 
-    all_results: list[dict] = []
     semaphore = asyncio.Semaphore(3)
 
     async def fetch_variation(var_query: str, weight: float):
@@ -64,10 +63,10 @@ async def _execute_search(
                 results = await _fetch_from_searxng(params, timeout * type_config.timeout_multiplier)
                 for r in results:
                     r["_query_weight"] = weight
-                return results
+                return results, None
             except Exception as e:
                 logger.warning(f"Query variation failed: {var_query} — {e}")
-                return []
+                return [], e
 
     tasks = [
         fetch_variation(v["query"], float(v["weight"]))
@@ -75,8 +74,17 @@ async def _execute_search(
     ]
 
     variation_results = await asyncio.gather(*tasks)
-    for vr in variation_results:
-        all_results.extend(vr)
+    
+    all_results: list[dict] = []
+    errors: list[Exception] = []
+    for vr, err in variation_results:
+        if err:
+            errors.append(err)
+        else:
+            all_results.extend(vr)
+
+    if len(errors) == len(tasks) and errors:
+        raise errors[-1]
 
     return all_results
 
