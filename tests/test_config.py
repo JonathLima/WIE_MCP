@@ -1,5 +1,22 @@
 import pytest
-from src.config import SearxngConfig, FetchConfig, ServerConfig
+from src.config import (
+    SearxngConfig,
+    FetchConfig,
+    ServerConfig,
+    get_searxng_config,
+    get_fetch_config,
+    get_server_config,
+)
+
+@pytest.fixture(autouse=True)
+def clear_config_caches():
+    get_searxng_config.cache_clear()
+    get_fetch_config.cache_clear()
+    get_server_config.cache_clear()
+    yield
+    get_searxng_config.cache_clear()
+    get_fetch_config.cache_clear()
+    get_server_config.cache_clear()
 
 def test_searxng_config_aliases(monkeypatch):
     monkeypatch.setenv("SEARXNG_HOST", "http://my-searxng:1234")
