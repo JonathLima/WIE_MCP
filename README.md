@@ -746,13 +746,23 @@ To access from another computer, replace `localhost` with the host IP:
 
 ### Environment Variables
 
-In `docker-compose.yml`, add:
+WIE_MCP supports standard environment variables configured via system environment or a `.env` file:
 
-```yaml
-environment:
-  - SEARXNG_HOST=http://searxng:8080
-  - API_KEY=your-key-here
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SEARXNG_HOST` | Host address of the SearxNG meta-search engine | `http://searxng:8080` |
+| `SEARXNG_ENGINES` | Comma-separated engines enabled in SearxNG | `google,duckduckgo,bing,wikipedia,startpage` |
+| `SEARXNG_DEFAULT_CATEGORY` | Default search category | `general` |
+| `SEARXNG_SAFESEARCH` | Safe search level: `0` (off), `1` (moderate), `2` (strict) | `0` |
+| `SEARCH_DEFAULT_TYPE` | Default search mode: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` | `auto` |
+| `SEARCH_DEFAULT_LIMIT` | Default limit of results returned by discovery search | `10` |
+| `SEARCH_TIMEOUT_SECONDS` | Search timeout in seconds | `10.0` |
+| `FETCH_TIMEOUT_SECONDS` | Timeout in seconds for page fetching | `15.0` |
+| `FETCH_MAX_CONTENT_LENGTH` | Max characters to extract from a web page | `10000` |
+| `FETCH_TOKEN_BUDGET` | Approximate token budget for extracted page content | `8000` |
+| `MCP_SERVER_HOST` | Host address the MCP server binds to | `0.0.0.0` |
+| `MCP_SERVER_PORT` | Port for the MCP server endpoint | `8000` |
+| `API_KEY` | Optional API key to restrict access to the server | *(none)* |
 
 ### Custom Port
 

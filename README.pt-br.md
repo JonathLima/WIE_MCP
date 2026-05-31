@@ -746,13 +746,23 @@ Para acessar de outro computador, substitua `localhost` pelo IP do host:
 
 ### Variáveis de Ambiente
 
-No `docker-compose.yml`, adicione:
+O WIE_MCP suporta variáveis de ambiente padrão configuradas via ambiente do sistema ou através de um arquivo `.env`:
 
-```yaml
-environment:
-  - SEARXNG_HOST=http://searxng:8080
-  - API_KEY=sua-chave-aqui
-```
+| Variável | Descrição | Padrão |
+|----------|-----------|---------|
+| `SEARXNG_HOST` | Endereço do host do motor de busca SearxNG | `http://searxng:8080` |
+| `SEARXNG_ENGINES` | Motores de busca ativados no SearxNG (separados por vírgula) | `google,duckduckgo,bing,wikipedia,startpage` |
+| `SEARXNG_DEFAULT_CATEGORY` | Categoria de busca padrão | `general` |
+| `SEARXNG_SAFESEARCH` | Nível do Safe Search: `0` (desativado), `1` (moderado), `2` (estrito) | `0` |
+| `SEARCH_DEFAULT_TYPE` | Modo de busca padrão: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` | `auto` |
+| `SEARCH_DEFAULT_LIMIT` | Limite padrão de resultados retornados pela busca de descoberta | `10` |
+| `SEARCH_TIMEOUT_SECONDS` | Timeout da busca em segundos | `10.0` |
+| `FETCH_TIMEOUT_SECONDS` | Timeout em segundos para busca e raspagem de páginas web | `15.0` |
+| `FETCH_MAX_CONTENT_LENGTH` | Limite máximo de caracteres extraídos de uma página web | `10000` |
+| `FETCH_TOKEN_BUDGET` | Orçamento aproximado de tokens do conteúdo extraído de páginas | `8000` |
+| `MCP_SERVER_HOST` | Endereço de host que o servidor MCP escutará | `0.0.0.0` |
+| `MCP_SERVER_PORT` | Porta de rede para o endpoint do servidor MCP | `8000` |
+| `API_KEY` | Chave de API opcional para restringir o acesso ao servidor | *(nenhum)* |
 
 ### Porta Customizada
 
