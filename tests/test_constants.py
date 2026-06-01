@@ -1,7 +1,7 @@
 import pytest
 from src.constants import (
     SEARCH_TYPE_CONFIG, CATEGORY_DOMAINS, CATEGORY_ENGINES,
-    DOMAIN_TIER_1_LIST, DOMAIN_TIER_2_LIST, DOMAIN_TIER_3_LIST,
+    TIER1_DOMAINS, TIER1_SUFFIXES, TIER2_DOMAINS, TIER3_DOMAINS,
     VAGUE_PHRASES, SPECIFIC_DATA_PATTERNS,
 )
 
@@ -21,8 +21,35 @@ def test_category_domains_has_all_categories():
     assert set(CATEGORY_DOMAINS.keys()) == expected
 
 def test_tier1_includes_official_domains():
-    assert "github.com" in DOMAIN_TIER_1_LIST
-    assert "arxiv.org" in DOMAIN_TIER_1_LIST
+    assert "github.com" in TIER1_DOMAINS
+    assert "arxiv.org" in TIER1_DOMAINS
+
+def test_tier1_is_frozenset():
+    assert isinstance(TIER1_DOMAINS, frozenset)
+
+def test_tier1_suffixes_contains_gov_and_edu():
+    assert ".gov" in TIER1_SUFFIXES
+    assert ".edu" in TIER1_SUFFIXES
+    assert ".gov.br" in TIER1_SUFFIXES
+    assert ".edu.br" in TIER1_SUFFIXES
+
+def test_tier1_suffixes_is_tuple():
+    assert isinstance(TIER1_SUFFIXES, tuple)
+
+def test_tier2_includes_stackoverflow():
+    assert "stackoverflow.com" in TIER2_DOMAINS
+    assert "wikipedia.org" in TIER2_DOMAINS
+
+def test_tier2_is_frozenset():
+    assert isinstance(TIER2_DOMAINS, frozenset)
 
 def test_tier3_includes_blogs():
-    assert "medium.com" in DOMAIN_TIER_3_LIST
+    assert "medium.com" in TIER3_DOMAINS
+
+def test_tier3_is_frozenset():
+    assert isinstance(TIER3_DOMAINS, frozenset)
+
+def test_tiers_are_disjoint():
+    assert TIER1_DOMAINS.isdisjoint(TIER2_DOMAINS), "TIER1 and TIER2 should not overlap"
+    assert TIER1_DOMAINS.isdisjoint(TIER3_DOMAINS), "TIER1 and TIER3 should not overlap"
+    assert TIER2_DOMAINS.isdisjoint(TIER3_DOMAINS), "TIER2 and TIER3 should not overlap"
