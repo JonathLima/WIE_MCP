@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 TimeRange = Literal["hour", "day", "week", "month", "year"]
 
-SearchCategory = Literal[
+SearxngCategory = Literal[
     "general",
     "news",
     "images",
@@ -40,7 +40,7 @@ class SearxngConfig(BaseSettings):
         validation_alias=AliasChoices("SEARXNG_ENGINES", "engines"),
         description="Comma-separated list of enabled SearxNG engines",
     )
-    default_category: SearchCategory = Field(
+    default_category: SearxngCategory = Field(
         default="general",
         validation_alias=AliasChoices("SEARXNG_DEFAULT_CATEGORY", "default_category"),
         description="Default search category when none specified",
