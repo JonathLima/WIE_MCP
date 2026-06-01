@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
-      "args": ["-m", "src.server"]
+      "args": ["-m", "src.server", "stdio"]
     }
   }
 }
