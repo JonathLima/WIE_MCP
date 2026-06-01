@@ -15,32 +15,32 @@ def test_search_category_enum_values():
 
 def test_search_request_advanced_defaults():
     req = SearchRequestAdvanced(query="test")
-    assert req.type == SearchType.AUTO
-    assert req.numResults == 10
-    assert req.enableHighlights is True
-    assert req.enableSummary is False
-    assert req.additionalQueries is True
+    assert req.search_type == SearchType.AUTO
+    assert req.num_results == 10
+    assert req.enable_highlights is True
+    assert req.enable_summary is False
+    assert req.additional_queries is True
 
 def test_search_request_advanced_full():
     req = SearchRequestAdvanced(
         query="python release",
-        type=SearchType.DEEP,
-        numResults=50,
+        search_type=SearchType.DEEP,
+        num_results=50,
         category=SearchCategory.RESEARCH_PAPER,
-        includeDomains=["arxiv.org"],
-        excludeDomains=["medium.com"],
-        startPublishedDate="2024-01-01",
-        endPublishedDate="2024-12-31",
+        include_domains=["arxiv.org"],
+        exclude_domains=["medium.com"],
+        start_published_date="2024-01-01",
+        end_published_date="2024-12-31",
         highlight_sentences=5,
     )
-    assert req.type == SearchType.DEEP
+    assert req.search_type == SearchType.DEEP
     assert req.category == "research_paper"
-    assert req.includeDomains == ["arxiv.org"]
+    assert req.include_domains == ["arxiv.org"]
 
 def test_content_item_has_highlights():
     item = ContentItem(
         url="https://example.com",
-        statusCode=200,
+        status_code=200,
         title="Test",
         content="Full article text here",
         highlights=["First highlight", "Second highlight"],

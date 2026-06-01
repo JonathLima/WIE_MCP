@@ -34,60 +34,60 @@ class UserLocation(BaseModel):
 
 class SearchRequestAdvanced(BaseModel):
     query: str = Field(min_length=1, max_length=500)
-    type: SearchType = Field(default=SearchType.AUTO)
-    numResults: int = Field(default=10, ge=1, le=100)
+    search_type: SearchType = Field(default=SearchType.AUTO)
+    num_results: int = Field(default=10, ge=1, le=100)
     category: Optional[SearchCategory] = None
-    includeDomains: Optional[list[str]] = None
-    excludeDomains: Optional[list[str]] = None
-    startPublishedDate: Optional[str] = None
-    endPublishedDate: Optional[str] = None
-    startCrawlDate: Optional[str] = None
-    endCrawlDate: Optional[str] = None
-    includeText: Optional[list[str]] = None
-    excludeText: Optional[list[str]] = None
-    userLocation: Optional[UserLocation] = None
+    include_domains: Optional[list[str]] = None
+    exclude_domains: Optional[list[str]] = None
+    start_published_date: Optional[str] = None
+    end_published_date: Optional[str] = None
+    start_crawl_date: Optional[str] = None
+    end_crawl_date: Optional[str] = None
+    include_text: Optional[list[str]] = None
+    exclude_text: Optional[list[str]] = None
+    user_location: Optional[UserLocation] = None
     safesearch: Optional[int] = Field(default=0, ge=0, le=2)
-    enableHighlights: bool = Field(default=True)
+    enable_highlights: bool = Field(default=True)
     highlight_sentences: int = Field(default=3, ge=1, le=10)
-    enableSummary: bool = Field(default=False)
-    additionalQueries: bool = Field(default=True)
+    enable_summary: bool = Field(default=False)
+    additional_queries: bool = Field(default=True)
 
 class SearchResultAdvanced(BaseModel):
     title: str
     url: HttpUrl
     snippet: str = ""
-    publishedDate: Optional[str] = None
+    published_date: Optional[str] = None
     author: Optional[str] = None
     domain: str = ""
-    domainTier: int = Field(ge=1, le=4)
+    domain_tier: int = Field(ge=1, le=4)
     score: float = Field(ge=0.0)
     highlights: list[str] = Field(default_factory=list)
     summary: Optional[str] = None
-    wordCount: int = 0
+    word_count: int = 0
 
 class SearchResponseAdvanced(BaseModel):
     query: str
     results: list[SearchResultAdvanced]
-    searchType: str
-    totalFound: int
-    additionalQueriesUsed: list[str] = Field(default_factory=list)
-    incompleteResults: bool = False
+    search_type: str
+    total_found: int
+    additional_queries_used: list[str] = Field(default_factory=list)
+    incomplete_results: bool = False
 
 # === Get Contents Models ===
 class GetContentsRequest(BaseModel):
     urls: list[str] = Field(min_length=1, max_length=20)
     highlight_query: Optional[str] = None
     highlight_sentences: int = Field(default=3, ge=1, le=10)
-    enableSummary: bool = Field(default=False)
+    enable_summary: bool = Field(default=False)
     max_tokens: int = Field(default=8000, ge=500, le=128000)
 
 class ContentItem(BaseModel):
     url: str
-    statusCode: int = 200
+    status_code: int = 200
     title: str = ""
     author: Optional[str] = None
-    publishedDate: Optional[str] = None
-    wordCount: int = 0
+    published_date: Optional[str] = None
+    word_count: int = 0
     content: str = ""
     highlights: list[str] = Field(default_factory=list)
     summary: Optional[str] = None
