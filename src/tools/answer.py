@@ -9,7 +9,7 @@ from src.utils.highlights import extract_highlights
 logger = logging.getLogger(__name__)
 
 async def _fetch_and_extract(url: str, query: str, max_tokens: int) -> str:
-    from src.tools.web_fetch import fetch_page
+    from src.tools.fetch_page import fetch_page
     try:
         content = await fetch_page(url, max_tokens=max_tokens)
         lines = [line for line in content.split("\n") if not line.startswith("#") and line.strip()]
@@ -43,11 +43,12 @@ async def answer(query: str, urls: list[str]) -> str:
     combined = "\n\n".join(passages)
     answer_text = extractive_summary(combined, num_sentences=4)
 
-    lines = [f"## 💡 Answer to: \"{query}\""]
-    lines.append("")
+    lines = [f'## Answer: "{query}"', ""]
     lines.append(answer_text)
     lines.append("")
     lines.append("---")
-    lines.append(f"*Sources: {', '.join(urls)}*")
+    lines.append(f"Sources ({len(urls)}):")
+    for url in urls:
+        lines.append(f"- {url}")
 
     return "\n".join(lines)

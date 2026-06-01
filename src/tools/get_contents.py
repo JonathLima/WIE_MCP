@@ -4,11 +4,12 @@ import asyncio
 import logging
 from typing import Optional
 
-from src.tools.web_fetch import fetch_page
+from src.tools.fetch_page import _fetch_page_structured
 from src.utils.highlights import extract_highlights
 from src.utils.summarizer import extractive_summary
 
 logger = logging.getLogger(__name__)
+
 
 async def _fetch_single_url(
     url: str,
@@ -17,54 +18,43 @@ async def _fetch_single_url(
     enable_summary: bool,
     max_tokens: int,
 ) -> dict:
-    try:
-        content = await fetch_page(url, max_tokens=max_tokens)
+    response = await _fetch_page_structured(url, max_tokens=max_tokens)
 
-        title = ""
-        page_content = ""
-        if "## " in content:
-            parts = content.split("## ", 2)
-            if len(parts) > 1:
-                title = parts[1].split("\n")[0].strip()
-
-        lines = content.split("\n")
-        content_lines = [line for line in lines if not line.startswith("#") and line.strip()]
-        page_content = "\n".join(content_lines)
-
-        highlights = []
-        if highlight_query:
-            highlights = extract_highlights(
-                page_content, highlight_query, num_sentences=highlight_sentences
-            )
-
-        summary = None
-        if enable_summary:
-            summary = extractive_summary(page_content, num_sentences=3)
-
+    if response is None:
         return {
             "url": url,
-            "statusCode": 200,
-            "title": title,
-            "content": page_content,
-            "highlights": highlights,
-            "summary": summary,
-        }
-    except Exception as e:
-        logger.warning(f"Failed to fetch {url}: {e}")
-        return {
-            "url": url,
-            "statusCode": 500,
+            "status_code": 500,
             "title": "",
             "content": "",
             "highlights": [],
             "summary": None,
         }
 
+    highlights: list[str] = []
+    if highlight_query and response.content:
+        highlights = extract_highlights(
+            response.content, highlight_query, num_sentences=highlight_sentences
+        )
+
+    summary: str | None = None
+    if enable_summary and response.content:
+        summary = extractive_summary(response.content, num_sentences=3)
+
+    return {
+        "url": url,
+        "status_code": response.status_code,
+        "title": response.title,
+        "content": response.content,
+        "highlights": highlights,
+        "summary": summary,
+    }
+
+
 async def get_contents(
     urls: list[str],
     highlight_query: Optional[str] = None,
     highlight_sentences: int = 3,
-    enableSummary: bool = False,
+    enable_summary: bool = False,
     max_tokens: int = 8000,
 ) -> str:
     logger.info(f"get_contents: {len(urls)} URLs")
@@ -74,7 +64,7 @@ async def get_contents(
     async def bounded_fetch(url: str):
         async with semaphore:
             return await _fetch_single_url(
-                url, highlight_query, highlight_sentences, enableSummary, max_tokens
+                url, highlight_query, highlight_sentences, enable_summary, max_tokens
             )
 
     results = await asyncio.gather(*[bounded_fetch(u) for u in urls])
@@ -85,7 +75,7 @@ async def get_contents(
     for i, item in enumerate(results, 1):
         lines.append(f"### {i}. {item['title'] or item['url']}")
         lines.append(f"**URL:** {item['url']}")
-        lines.append(f"**Status:** {item['statusCode']}")
+        lines.append(f"**Status:** {item['status_code']}")
 
         if item["highlights"]:
             lines.append("**Highlights:**")

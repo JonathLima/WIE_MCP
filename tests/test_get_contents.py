@@ -7,7 +7,7 @@ async def test_get_contents_returns_markdown():
     with patch("src.tools.get_contents._fetch_single_url") as mock_fetch:
         mock_fetch.return_value = {
             "url": "https://example.com",
-            "statusCode": 200,
+            "status_code": 200,
             "title": "Example",
             "content": "Page content",
             "highlights": [],
@@ -22,7 +22,7 @@ async def test_get_contents_highlights():
     with patch("src.tools.get_contents._fetch_single_url") as mock_fetch:
         mock_fetch.return_value = {
             "url": "https://python.org",
-            "statusCode": 200,
+            "status_code": 200,
             "title": "Python",
             "content": "Python is a programming language.",
             "highlights": ["Python is a programming language."],
