@@ -66,9 +66,9 @@ A high-precision Model Context Protocol (MCP) server that provides deep investig
 | **`auto`** | Best overall — balanced speed/quality | General research, first-pass discovery |
 | **`fast`** | Instant results, minimal processing | Quick facts, single-engine, no rerank |
 | **`instant`** | Sub-second, ultra-lean results | "I'm feeling lucky" — top 3 results only |
-| **`deep-lite`** | Light deep research — 3 query variations | Background research, initial investigation |
+| **`deep_lite`** | Light deep research — 3 query variations | Background research, initial investigation |
 | **`deep`** | Full deep research — 5 query variations | Comprehensive reports, detailed analysis |
-| **`deep-reasoning`** | Multi-step chain-of-thought — 7+ variations | Complex investigations, multi-perspective synthesis |
+| **`deep_reasoning`** | Multi-step chain-of-thought — 7+ variations | Complex investigations, multi-perspective synthesis |
 
 ---
 
@@ -99,11 +99,11 @@ SEARCH_DEFAULT_TYPE=fast
 For maximum quality, use deep modes in your calls:
 
 ```python
-web_search_advanced({
-    "query": "your topic",
-    "type": "deep",  # or "deep_reasoning"
-    "numResults": 20
-})
+web_search_advanced(
+    query="your topic",
+    search_type="deep",  # or "deep_reasoning"
+    num_results=20
+)
 ```
 
 ---
@@ -159,38 +159,38 @@ Basic multi-engine search with authority tier scoring.
 Full-featured search with all filter options, highlights, and summaries.
 
 ```python
-{
-  "query": "OpenAI GPT-5 release date",
-  "type": "deep",
-  "numResults": 20,
-  "category": "news",
-  "includeDomains": ["reuters.com", "bloomberg.com"],
-  "startPublishedDate": "2025-01-01",
-  "enableHighlights": True,
-  "enableSummary": True
-}
+web_search_advanced(
+    query="OpenAI GPT-5 release date",
+    search_type="deep",
+    num_results=20,
+    category="news",
+    include_domains=["reuters.com", "bloomberg.com"],
+    start_published_date="2025-01-01",
+    enable_highlights=True,
+    enable_summary=True
+)
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | `string` | **Required** | Search query |
-| `type` | `SearchType` | `"auto"` | Search type: `auto`, `fast`, `instant`, `deep_lite`, `deep`, `deep_reasoning` |
-| `numResults` | `int` | `10` | Results count (1-100) |
+| `search_type` | `SearchType` | `"auto"` | Search type: `auto`, `fast`, `instant`, `deep_lite`, `deep`, `deep_reasoning` |
+| `num_results` | `int` | `10` | Results count (1-100) |
 | `category` | `Category` | `null` | Category filter |
-| `includeDomains` | `list[string]` | `null` | Required domains |
-| `excludeDomains` | `list[string]` | `null` | Blocked domains |
-| `startPublishedDate` | `string` | `null` | ISO date — published after |
-| `endPublishedDate` | `string` | `null` | ISO date — published before |
-| `startCrawlDate` | `string` | `null` | ISO date — crawled after |
-| `endCrawlDate` | `string` | `null` | ISO date — crawled before |
-| `includeText` | `list[string]` | `null` | Required phrases in page |
-| `excludeText` | `list[string]` | `null` | Excluded phrases |
-| `userLocation` | `object` | `null` | `{"country": "US", "city": "NYC"}` |
+| `include_domains` | `list[string]` | `null` | Required domains |
+| `exclude_domains` | `list[string]` | `null` | Blocked domains |
+| `start_published_date` | `string` | `null` | ISO date — published after |
+| `end_published_date` | `string` | `null` | ISO date — published before |
+| `start_crawl_date` | `string` | `null` | ISO date — crawled after (reserved) |
+| `end_crawl_date` | `string` | `null` | ISO date — crawled before (reserved) |
+| `include_text` | `list[string]` | `null` | Required phrases in page |
+| `exclude_text` | `list[string]` | `null` | Excluded phrases |
+| `user_location` | `object` | `null` | `{"country": "US", "city": "NYC"}` |
 | `safesearch` | `int` | `0` | 0=off, 1=moderate, 2=strict |
-| `enableHighlights` | `bool` | `true` | Include query-matched highlights |
+| `enable_highlights` | `bool` | `true` | Include query-matched highlights |
 | `highlight_sentences` | `int` | `3` | Sentences per highlight (1-10) |
-| `enableSummary` | `bool` | `false` | Include extractive summary |
-| `additionalQueries` | `bool` | `true` | Enable query expansion for deep modes |
+| `enable_summary` | `bool` | `false` | Include extractive summary |
+| `additional_queries` | `bool` | `true` | Enable query expansion for deep modes |
 
 ---
 
@@ -199,16 +199,16 @@ Full-featured search with all filter options, highlights, and summaries.
 Fetch multiple URLs simultaneously with highlights and summaries.
 
 ```python
-{
-  "urls": [
-    "https://arxiv.org/abs/2401.04012",
-    "https://github.com/openai/gpt-5"
-  ],
-  "highlight_query": "GPT-5 architecture capabilities",
-  "highlight_sentences": 5,
-  "enableSummary": True,
-  "max_tokens": 8000
-}
+get_contents(
+    urls=[
+        "https://arxiv.org/abs/2401.04012",
+        "https://github.com/openai/gpt-5"
+    ],
+    highlight_query="GPT-5 architecture capabilities",
+    highlight_sentences=5,
+    enable_summary=True,
+    max_tokens=8000
+)
 ```
 
 | Parameter | Type | Default | Description |
@@ -216,7 +216,7 @@ Fetch multiple URLs simultaneously with highlights and summaries.
 | `urls` | `list[string]` | **Required** | URLs to fetch (1-20) |
 | `highlight_query` | `string` | `null` | Query for highlight extraction |
 | `highlight_sentences` | `int` | `3` | Sentences per highlight |
-| `enableSummary` | `bool` | `false` | Include extractive summary |
+| `enable_summary` | `bool` | `false` | Include extractive summary |
 | `max_tokens` | `int` | `8000` | Per-URL token budget (500-128000) |
 
 ---
@@ -305,7 +305,7 @@ python -m src.server
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
       "args": ["-m", "src.server"]
     }
@@ -323,7 +323,7 @@ python -m src.server http
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "url": "http://localhost:8000/mcp"
     }
   }
@@ -341,7 +341,7 @@ python -m src.server http
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
       "args": ["-m", "src.server"],
       "env": {}
@@ -361,7 +361,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
       "args": ["-m", "src.server"]
     }
@@ -380,7 +380,7 @@ Settings → MCP → Add new server
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
       "args": ["-m", "src.server"]
     }
@@ -399,7 +399,7 @@ Settings → MCP → Add new server
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
       "args": ["-m", "src.server"]
     }
@@ -418,7 +418,7 @@ Settings → MCP → Add new server
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "command": "python",
       "args": ["-m", "src.server"]
     }
@@ -441,7 +441,7 @@ python -m src.server http
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "url": "http://localhost:8000/mcp"
     }
   }
@@ -464,27 +464,27 @@ web_search({
 ### Advanced Deep Research
 
 ```
-web_search_advanced({
-  "query": "impact of LLMs on software development",
-  "type": "deep",
-  "category": "research_paper",
-  "numResults": 20,
-  "enableHighlights": true,
-  "enableSummary": true
-})
+web_search_advanced(
+    query="impact of LLMs on software development",
+    search_type="deep",
+    category="research_paper",
+    num_results=20,
+    enable_highlights=True,
+    enable_summary=True
+)
 ```
 
 ### Batch Content Fetch with Highlights
 
 ```
-get_contents({
-  "urls": [
-    "https://arxiv.org/abs/2401.04012",
-    "https://github.com/anthropic/claude-code"
-  ],
-  "highlight_query": "LLM code generation capabilities",
-  "enableSummary": true
-})
+get_contents(
+    urls=[
+        "https://arxiv.org/abs/2401.04012",
+        "https://github.com/anthropic/claude-code"
+    ],
+    highlight_query="LLM code generation capabilities",
+    enable_summary=True
+)
 ```
 
 ### Extractive Q&A
@@ -508,25 +508,25 @@ site_search({
 ### Category-Specific Research
 
 ```
-web_search_advanced({
-  "query": "Tesla stock performance 2024",
-  "type": "deep",
-  "category": "financial_report",
-  "startPublishedDate": "2024-01-01"
-})
+web_search_advanced(
+    query="Tesla stock performance 2024",
+    search_type="deep",
+    category="financial_report",
+    start_published_date="2024-01-01"
+)
 
-web_search_advanced({
-  "query": "machine learning transformers attention",
-  "type": "deep",
-  "category": "research_paper",
-  "includeDomains": ["arxiv.org", "papers.nips.cc"]
-})
+web_search_advanced(
+    query="machine learning transformers attention",
+    search_type="deep",
+    category="research_paper",
+    include_domains=["arxiv.org", "papers.nips.cc"]
+)
 
-web_search_advanced({
-  "query": "John Carmack career biography",
-  "type": "deep",
-  "category": "people"
-})
+web_search_advanced(
+    query="John Carmack career biography",
+    search_type="deep",
+    category="people"
+)
 ```
 
 ---
@@ -657,19 +657,27 @@ Results are classified by source reliability:
 ## 📁 Project Structure
 
 ```
-SearchEngineLLM/
+WIE_MCP/
 ├── src/
 │   ├── server.py                  # MCP server entry point
 │   ├── config.py                  # Pydantic settings & configuration
+│   ├── constants.py               # Domain tiers, search types (single source of truth)
 │   ├── models.py                  # Request/response schemas
 │   ├── errors.py                  # Error classes
-│   └── tools/
-│       ├── web_search.py          # Basic discovery search
-│       ├── web_search_advanced.py # Full Exa-parity advanced search
-│       ├── web_fetch.py           # Single URL content extraction
-│       ├── get_contents.py         # Batch content + highlights
-│       ├── site_search.py          # Domain-specific search
-│       └── answer.py               # Extractive Q&A
+│   ├── searxng_client.py          # Shared SearXNG HTTP client
+│   ├── tools/
+│   │   ├── web_search.py          # Basic discovery search
+│   │   ├── web_search_advanced.py # Full advanced search with filters
+│   │   ├── fetch_page.py          # Single URL content extraction
+│   │   ├── get_contents.py        # Batch content + highlights
+│   │   ├── site_search.py         # Domain-specific search
+│   │   └── answer.py              # Extractive Q&A
+│   └── utils/
+│       ├── dedup.py               # Deduplication & scoring
+│       ├── highlights.py          # Highlight extraction
+│       ├── summarizer.py          # Extractive summarizer
+│       ├── text.py                # Shared sentence splitter
+│       └── query_expander.py      # Query expansion
 ├── configs/                        # MCP client configurations
 ├── docs/
 │   └── superpowers/
@@ -737,7 +745,7 @@ To access from another computer, replace `localhost` with the host IP:
 ```json
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "url": "http://192.168.1.100:8000/mcp"
     }
   }
