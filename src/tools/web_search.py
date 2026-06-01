@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
 
 import httpx
 
 from src.config import get_searxng_config
-from src.errors import (
-    SearchConnectionError,
-    SearchHTTPError,
-    SearchTimeoutError,
-)
-from src.models import SearchRequest, SearchResult, SearchResponse, ToolErrorResponse
+from src.models import SearchRequest, SearchResult, SearchResponse
+from src.searxng_client import fetch_search_results
 from src.utils.dedup import deduplicate_and_score
 
 logger = logging.getLogger(__name__)
@@ -92,108 +89,35 @@ def _build_search_params(request: SearchRequest) -> dict[str, str]:
 
     return params
 
-async def _fetch_from_searxng(
-    params: dict[str, str],
-    timeout: float,
-) -> tuple[list[dict], str]:
-    config = get_searxng_config()
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.get(config.search_url, params=params)
-        response.raise_for_status()
-        data = response.json()
-
-    raw_results: list[dict] = data.get("results", [])
-    engines_str = params.get("engines", "")
-
-    return raw_results, engines_str
-
-_TIER_LABELS = {
-    1: "🟢 Tier 1 — Official/Definitive (GitHub, Docs, .gov, .edu)",
-    2: "🔵 Tier 2 — Authoritative (Wikipedia, Stack Overflow, Journals)",
-    3: "🟡 Tier 3 — Reference (Technical Blogs, News, Reputable Orgs)",
-    4: "⚪ Tier 4 — Other/General (SEO sites, Reddit, General Blogs)",
-}
+_TIER_EMOJI: dict[int, str] = {1: "🟢", 2: "🔵", 3: "🟡", 4: "⚪"}
 
 def _format_search_response(response: SearchResponse) -> str:
     if not response.results:
-        lines: list[str] = []
-        lines.append("## ❌ No Results Found")
-        lines.append("")
-        lines.append(f"No search results were found for the query: **{response.query}**.")
-        lines.append("")
-        lines.append(
-            "**Suggestions to improve results:**\n"
-            "- Try rephrasing your query with different keywords\n"
-            "- Use broader or more specific search terms\n"
-            "- Try a different time range (e.g., `time_range='month'`)\n"
-            "- Try a different category (e.g., `categories='news'`)"
+        return (
+            "## No Results Found\n\n"
+            f"No results for: `{response.query}`\n\n"
+            "Suggestions: rephrase the query, broaden or narrow the terms, "
+            "or try a different time range or category."
         )
-        return "\n".join(lines)
 
-    lines = []
-    lines.append(f"## 🔍 Search Results ({len(response.results)} sources discovered)")
-    lines.append("")
-    lines.append(
-        f"**Query:** `{response.query}` | "
-        f"**Engines:** {', '.join(response.engines_used)}"
-    )
-    lines.append("")
-    lines.append("> ⚠️ **IMPORTANT: Snippets are often cached and dates below may be stale.**")
-    lines.append("> Always use `fetch_page(url)` to verify exact dates, versions, and facts.")
-    lines.append("")
+    lines = [
+        f"## Search Results — {len(response.results)} results",
+        f"Query: `{response.query}`  |  Engines: {', '.join(response.engines_used)}",
+        "",
+    ]
 
     for idx, result in enumerate(response.results, start=1):
-        tier_label = _TIER_LABELS.get(result.domain_tier, "⚪ Tier 4 — Other")
-
+        emoji = _TIER_EMOJI.get(result.domain_tier, "⚪")
+        hostname = urlparse(result.url_str).hostname or result.url_str
         lines.append(f"### {idx}. {result.title}")
-        lines.append(f"**URL:** {result.url_str}")
+        lines.append(f"URL: {result.url_str}")
+        lines.append(f"Source: {emoji} {hostname}  ·  Score: {result.score:.0f}/100")
         if result.snippet:
-            lines.append(f"**Snippet:** {result.snippet}")
-        
-        lines.append(
-            f"**Authority:** {tier_label} | "
-            f"**Reliability Score:** {result.score:.1f}/100"
-        )
-
-        indicators = []
-        if result.domain_tier == 1:
-            indicators.append("💎 **OFFICIAL SOURCE**")
-        if result.has_specific_data:
-            indicators.append("🔢 **Contains Specific Data** (Versions/Dates/Prices)")
-        if result.vagueness_detected:
-            indicators.append("🌫️ **Vague Language Detected**")
-        
-        if indicators:
-            lines.append(f"**Indicators:** {' | '.join(indicators)}")
-
+            lines.append(f"Snippet: {result.snippet}")
         if result.published_date:
-            lines.append(f"**Engine Cache Date:** {result.published_date} (⚠️ verify on-page)")
+            lines.append(f"Published: {result.published_date}")
         lines.append("")
 
-    lines.append("---")
-    lines.append(
-        "## 🛠️ OPERATIONAL GUIDELINES FOR THE RESEARCHER\n"
-        "\n"
-        "1. **Prioritize 🟢 Tier 1 and 🔵 Tier 2 sources.** They are the 'Level 1 Truth' (official docs/GitHub/Academic).\n"
-        "\n"
-        "2. **NEVER trust a date or version number from a snippet.** Use `fetch_page(url)` on the top 1-2 authoritative results to find the actual release date/version in the current content.\n"
-        "\n"
-        "3. **Cross-reference facts.** If 🟡 Tier 3 or ⚪ Tier 4 sources conflict with 🟢 Tier 1, always follow the Tier 1 source.\n"
-        "\n"
-        "4. **If information is missing** → try `site_search` on a specific authoritative domain (e.g., `github.com` or `docs.python.org`)."
-    )
-
-    return "\n".join(lines)
-
-def _format_error(error: ToolErrorResponse) -> str:
-    lines = []
-    lines.append(f"## ⚠️ Search Error: `{error.error_code}`")
-    lines.append("")
-    lines.append(f"**{error.message}**")
-    lines.append("")
-    lines.append(f"**How to proceed:** {error.retry_guidance}")
-    lines.append("")
     return "\n".join(lines)
 
 async def get_raw_searxng_results(
@@ -217,7 +141,7 @@ async def get_raw_searxng_results(
     config = get_searxng_config()
     params = _build_search_params(request)
     try:
-        raw_results, _ = await _fetch_from_searxng(params, timeout=config.timeout)
+        raw_results = await fetch_search_results(params, timeout=config.timeout)
         return raw_results
     except Exception:
         return []
@@ -259,55 +183,25 @@ async def web_search(
     params = _build_search_params(request)
 
     try:
-        raw_results, engines_used = await _fetch_from_searxng(
-            params, timeout=config.timeout
+        raw_results = await fetch_search_results(params, timeout=config.timeout)
+        engines_list = [e.strip() for e in params.get("engines", "").split(",") if e.strip()]
+    except httpx.ConnectError:
+        return (
+            f"## Connection Error\n"
+            f"Cannot reach SearXNG at `{config.host}`. Verify Docker is running."
         )
-    except httpx.ConnectError as exc:
-        logger.error("Cannot connect to SearxNG at %s — %s", config.host, exc)
-        error = SearchConnectionError(
-            f"Unable to connect to the search service at {config.host}."
+    except httpx.TimeoutException:
+        return (
+            f"## Timeout\n"
+            f"SearXNG did not respond within {config.timeout}s. Try a shorter query."
         )
-        return _format_error(ToolErrorResponse(
-            error_code=error.error_code,
-            message=str(error),
-            retry_guidance=error.retry_guidance,
-            markdown="",
-        ))
-    except httpx.TimeoutException as exc:
-        logger.error("SearxNG request timed out — %s", exc)
-        error = SearchTimeoutError(
-            f"Search request timed out after {config.timeout}s. "
-            f"Query: {query!r}"
-        )
-        return _format_error(ToolErrorResponse(
-            error_code=error.error_code,
-            message=str(error),
-            retry_guidance=error.retry_guidance,
-            markdown="",
-        ))
     except httpx.HTTPStatusError as exc:
-        logger.error("SearxNG returned HTTP %s — %s", exc.response.status_code, exc)
-        error = SearchHTTPError(
-            f"Search service returned HTTP {exc.response.status_code}.",
-            status_code=exc.response.status_code,
-        )
-        return _format_error(ToolErrorResponse(
-            error_code=error.error_code,
-            message=str(error),
-            retry_guidance=error.retry_guidance,
-            markdown="",
-        ))
+        return f"## HTTP Error {exc.response.status_code}\nSearXNG returned an error. Try again."
     except Exception as exc:
-        logger.error("Unexpected error in web_search: %s", exc, exc_info=True)
-        return _format_error(ToolErrorResponse(
-            error_code="SEARCH_UNKNOWN_ERROR",
-            message=f"An unexpected error occurred during search: {exc}",
-            retry_guidance="Try again with a different query or check server logs.",
-            markdown="",
-        ))
+        logger.error("web_search error: %s", exc, exc_info=True)
+        return f"## Search Error\n{exc}"
 
     total_found = len(raw_results)
-    engines_list = [e.strip() for e in engines_used.split(",") if e.strip()] if engines_used else []
 
     results = deduplicate_and_score(raw_results, engines_list)
 
