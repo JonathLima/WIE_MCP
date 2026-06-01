@@ -1,324 +1,109 @@
-# WIE - Web Investigator Engine
+# WIE — Web Investigator Engine
 
-> **Privacy-first, unlimited, zero-cost neural search for AI agents**
+> MCP server for web search and content extraction — free, self-hosted, zero-tracking.
 
 [![AGPLv3 License](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org)
 
-A high-precision Model Context Protocol (MCP) server that provides deep investigation tools for LLMs. Built on the **Investigator Pattern**: rich metadata and deep content extraction enable models (Claude, Gemini, GPT-4) to perform factually perfect research — without complex prompts.
+**WIE** is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI agents (Claude, Gemini, GPT-4, etc.) the ability to search the web and extract page content. It sits between your AI client and the internet, using a local [SearXNG](https://searxng.github.io/searxng/) instance as its search engine — no external API keys required.
 
 🇧🇷 [Versão em Português](./README.pt-br.md)
 
 ---
 
-## ✨ Why WIE - Web Investigator Engine?
-
-| Feature | Exa Search | WIE - Web Investigator Engine |
-|---------|-----------|----------------------|
-| **Cost** | Paid tier | Free & open-source |
-| **Privacy** | Data may be logged | Zero-logging, self-hosted |
-| **Customization** | Limited | Full source access |
-| **Infrastructure** | External API dependency | Run on your own hardware |
-| **Transparency** | Proprietary black box | Fully transparent |
-| **Speed** | Fast | Tuned for LLM efficiency |
-
----
-
-## 🏗️ Architecture
+## How it works
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           MCP SERVER                                        │
-│                     (Investigator Pattern)                                 │
-│                                                                             │
-│   ┌──────────────────┐  ┌───────────────────────┐  ┌──────────────────┐   │
-│   │  web_search()    │  │ web_search_advanced()  │  │  site_search()   │   │
-│   │  (Discovery)      │  │ (Full Exa parity)    │  │  (Definitive)    │   │
-│   └──────────────────┘  └───────────────────────┘  └──────────────────┘   │
-│                                                                             │
-│   ┌──────────────────┐  ┌───────────────────────┐                          │
-│   │  fetch_page()    │  │   get_contents()      │                          │
-│   │  (Single URL)     │  │   (Batch + Highlights)│                          │
-│   └──────────────────┘  └───────────────────────┘                          │
-│                                                                             │
-│   ┌───────────────────────┐                                                 │
-│   │      answer()          │  (Extractive QA)                               │
-│   └───────────────────────┘                                                 │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKEND LAYER                                        │
-│                                                                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-│  │    SearxNG     │  │   FlashRank     │  │    Content Extraction       │  │
-│  │  Multi-Engine   │  │   Reranking     │  │  curl_cffi → nodriver → httpx│ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
+AI Agent (Claude, Cursor, Zed...)
+        │
+        ▼
+   MCP Server (WIE)             ← port 8000
+   ├── web_search()
+   ├── web_search_advanced()
+   ├── site_search()
+   ├── fetch_page()
+   ├── get_contents()
+   └── answer()
+        │
+        ▼
+   SearXNG (local)              ← port 8080
+   ├── google
+   ├── duckduckgo
+   ├── bing
+   ├── wikipedia
+   └── startpage
+        │
+        ▼
+      Internet
 ```
 
----
-
-## 🔎 Search Types
-
-| Type | Description | Use Case |
-|------|-------------|----------|
-| **`auto`** | Best overall — balanced speed/quality | General research, first-pass discovery |
-| **`fast`** | Instant results, minimal processing | Quick facts, single-engine, no rerank |
-| **`instant`** | Sub-second, ultra-lean results | "I'm feeling lucky" — top 3 results only |
-| **`deep_lite`** | Light deep research — 3 query variations | Background research, initial investigation |
-| **`deep`** | Full deep research — 5 query variations | Comprehensive reports, detailed analysis |
-| **`deep_reasoning`** | Multi-step chain-of-thought — 7+ variations | Complex investigations, multi-perspective synthesis |
+SearXNG runs locally in Docker. All queries are private — no third-party tracking, no API keys needed.
 
 ---
 
-## ⚡ Speed vs Quality
+## Requirements
 
-Choose the right search type based on your speed/quality needs:
+- **Docker** and **Docker Compose**
+- **Python 3.11+** (only for STDIO local mode)
+- An AI client that supports the MCP protocol
 
-| Type | Speed | Queries | Rerank | Best For |
-|------|-------|---------|--------|-------------|
-| `instant` | ⚡⚡⚡ Very fast | 1 | Quick facts, "I'm feeling lucky" |
-| `fast` | ⚡⚡ Fast | 1 | General quick search |
-| `auto` | ⚡ Balanced | 1 | **Default** — recommended |
-| `deep_lite` | 🐢 Slow | 3 | Background research |
-| `deep` | 🐢🐢 Slower | 5 | Comprehensive reports |
-| `deep_reasoning` | 🐢🐢🐢 Slowest | 7+ | Complex investigations |
+---
 
-### Speed Configuration via .env
+## Quick start
 
-For maximum speed, edit your `.env` file:
+### 1. Clone the repository
 
 ```bash
-# Maximum speed (1 engine, 5s timeout, fast mode)
-SEARXNG_ENGINES=google
-SEARCH_TIMEOUT_SECONDS=5
-SEARCH_DEFAULT_TYPE=fast
+git clone https://github.com/your-user/WIE_MCP.git
+cd WIE_MCP
 ```
 
-For maximum quality, use deep modes in your calls:
-
-```python
-web_search_advanced(
-    query="your topic",
-    search_type="deep",  # or "deep_reasoning"
-    num_results=20
-)
-```
-
----
-
-## 📂 Categories
-
-Filter results by content type for more targeted research:
-
-| Category | Description | Best For |
-|----------|-------------|----------|
-| **`general`** | General web content | Broad topics |
-| **`news`** | News articles and outlets | Current events, breaking news |
-| **`research_paper`** | Scholarly articles, arxiv | Academic research, citations |
-| **`company`** | Business sites, org pages | Company profiles, business info |
-| **`people`** | Biography, profiles, social | Person lookup, biographical info |
-| **`financial_report`** | SEC filings, earnings, PDFs | Investment research, financial analysis |
-| **`product`** | Product pages, e-commerce | Product specifications, reviews |
-| **`personal_site`** | Blogs, portfolios, indie sites | Expert opinions, personal insights |
-| **`code`** | GitHub, StackOverflow, docs | Code examples, documentation |
-| **`video`** | Video content | Tutorials, visual demonstrations |
-| **`image`** | Images and visual content | Visual references, diagrams |
-
----
-
-## 🛠️ Tool Reference
-
-### `web_search` — Discovery Search
-
-Basic multi-engine search with authority tier scoring.
-
-```python
-{
-  "query": "latest Python release 2025",
-  "time_range": "day",        # hour, day, week, month, year
-  "categories": "news",       # general, news, images, videos, it, science
-  "safesearch": "0",          # 0=off, 1=moderate, 2=strict
-  "limit": 10                 # 1-20 results
-}
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | `string` | **Required** | Search query string |
-| `time_range` | `string` | `null` | Filter: `hour`, `day`, `week`, `month`, `year` |
-| `categories` | `string` | `null` | Category filter |
-| `safesearch` | `string` | `null` | Safe search: `0`, `1`, `2` |
-| `limit` | `int` | `10` | Results 1-20 |
-
----
-
-### `web_search_advanced` — Advanced Exa-Style Search
-
-Full-featured search with all filter options, highlights, and summaries.
-
-```python
-web_search_advanced(
-    query="OpenAI GPT-5 release date",
-    search_type="deep",
-    num_results=20,
-    category="news",
-    include_domains=["reuters.com", "bloomberg.com"],
-    start_published_date="2025-01-01",
-    enable_highlights=True,
-    enable_summary=True
-)
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | `string` | **Required** | Search query |
-| `search_type` | `SearchType` | `"auto"` | Search type: `auto`, `fast`, `instant`, `deep_lite`, `deep`, `deep_reasoning` |
-| `num_results` | `int` | `10` | Results count (1-100) |
-| `category` | `Category` | `null` | Category filter |
-| `include_domains` | `list[string]` | `null` | Required domains |
-| `exclude_domains` | `list[string]` | `null` | Blocked domains |
-| `start_published_date` | `string` | `null` | ISO date — published after |
-| `end_published_date` | `string` | `null` | ISO date — published before |
-| `start_crawl_date` | `string` | `null` | ISO date — crawled after (reserved) |
-| `end_crawl_date` | `string` | `null` | ISO date — crawled before (reserved) |
-| `include_text` | `list[string]` | `null` | Required phrases in page |
-| `exclude_text` | `list[string]` | `null` | Excluded phrases |
-| `user_location` | `object` | `null` | `{"country": "US", "city": "NYC"}` |
-| `safesearch` | `int` | `0` | 0=off, 1=moderate, 2=strict |
-| `enable_highlights` | `bool` | `true` | Include query-matched highlights |
-| `highlight_sentences` | `int` | `3` | Sentences per highlight (1-10) |
-| `enable_summary` | `bool` | `false` | Include extractive summary |
-| `additional_queries` | `bool` | `true` | Enable query expansion for deep modes |
-
----
-
-### `get_contents` — Batch Content Retrieval
-
-Fetch multiple URLs simultaneously with highlights and summaries.
-
-```python
-get_contents(
-    urls=[
-        "https://arxiv.org/abs/2401.04012",
-        "https://github.com/openai/gpt-5"
-    ],
-    highlight_query="GPT-5 architecture capabilities",
-    highlight_sentences=5,
-    enable_summary=True,
-    max_tokens=8000
-)
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `urls` | `list[string]` | **Required** | URLs to fetch (1-20) |
-| `highlight_query` | `string` | `null` | Query for highlight extraction |
-| `highlight_sentences` | `int` | `3` | Sentences per highlight |
-| `enable_summary` | `bool` | `false` | Include extractive summary |
-| `max_tokens` | `int` | `8000` | Per-URL token budget (500-128000) |
-
----
-
-### `answer` — Extractive Question Answering
-
-Extract answers directly from source documents.
-
-```python
-{
-  "query": "What is the main contribution of this paper?",
-  "urls": ["https://arxiv.org/abs/2401.04012"]
-}
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | `string` | **Required** | Question to answer |
-| `urls` | `list[string]` | **Required** | Source URLs (1-20) |
-
----
-
-### `site_search` — Definitive Truth Search
-
-Search within a specific domain for authoritative results.
-
-```python
-{
-  "query": "async io release notes",
-  "site": "docs.python.org"
-}
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | `string` | **Required** | Search query |
-| `site` | `string` | **Required** | Target domain (e.g., `github.com`, `docs.rs`) |
-
----
-
-### `fetch_page` — Single Page Extraction
-
-Extract clean markdown content from a single URL.
-
-```python
-{
-  "url": "https://docs.python.org/3/whatsnew/3.12.html",
-  "max_tokens": 16000
-}
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `url` | `string` | **Required** | Full page URL |
-| `max_tokens` | `int` | `null` | Token budget override (500-128000) |
-
----
-
-## 🚀 Quick Start
-
-### 1. Clone and Configure
+### 2. Configure environment
 
 ```bash
-git clone https://github.com/your-user/SearchEngineLLM.git
-cd SearchEngineLLM
 cp .env.example .env
-# Edit .env: change SEARXNG_SECRET to a secure random string
 ```
 
-### 2. Start with Docker
+Edit `.env` and change at least `SEARXNG_SECRET`:
+
+```env
+SEARXNG_SECRET=replace-with-a-random-secure-string
+```
+
+### 3. Start the services
 
 ```bash
 docker compose up -d
 ```
 
-### 3. Configure Your MCP Client
+This starts two containers:
+- **wie-mcp-server** — the MCP server, on port `8000`
+- **wie-searxng** — SearXNG, on port `8080`
 
-This server supports both **STDIO** (local) and **HTTP** (remote) transport.
+Wait ~30 seconds for SearXNG to fully initialize.
 
-#### STDIO Mode
-
-```bash
-python -m src.server
-```
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "command": "python",
-      "args": ["-m", "src.server"]
-    }
-  }
-}
-```
-
-#### HTTP Mode (Remote)
+### 4. Verify
 
 ```bash
-python -m src.server http
-# Server runs at http://localhost:8000/mcp
+# Check containers are running
+docker ps
+
+# View MCP server logs
+docker logs wie-mcp-server
+
+# View SearXNG logs
+docker logs wie-searxng
 ```
+
+---
+
+## MCP client configuration
+
+### HTTP mode (recommended with Docker)
+
+Use when the server is running via `docker compose up`. The server is available at `http://localhost:8000/mcp`.
+
+**For Claude Desktop, Cursor, Windsurf, VS Code Cline, LM Studio:**
 
 ```json
 {
@@ -330,457 +115,337 @@ python -m src.server http
 }
 ```
 
----
+> **Reference files:** `configs/http-remote.json`, `configs/lm-studio.json`
 
-## 💻 Client Configurations
+### STDIO mode (local, no Docker for MCP)
 
-### Claude Desktop
+Use when you want to run the MCP server directly in your terminal (SearXNG still needs to be running).
 
-**File:** `configs/claude_desktop.json`
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "command": "python",
-      "args": ["-m", "src.server"],
-      "env": {}
-    }
-  }
-}
-```
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
-
----
-
-### Cursor
-
-**File:** `configs/cursor.json`
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "command": "python",
-      "args": ["-m", "src.server"]
-    }
-  }
-}
-```
-
-Settings → MCP → Add new server
-
----
-
-### Zed
-
-**File:** `configs/zed.json`
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "command": "python",
-      "args": ["-m", "src.server"]
-    }
-  }
-}
-```
-
-`.zed/config.json`
-
----
-
-### Windsurf
-
-**File:** `configs/windsurf.json`
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "command": "python",
-      "args": ["-m", "src.server"]
-    }
-  }
-}
-```
-
-Settings → MCP → Add new server
-
----
-
-### VS Code / Cline
-
-**File:** `configs/vscode.json`
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "command": "python",
-      "args": ["-m", "src.server"]
-    }
-  }
-}
-```
-
-`.vscode/mcp.json`
-
----
-
-### LM Studio (HTTP)
+**Prerequisites:** install Python dependencies:
 
 ```bash
-python -m src.server http
+python -m venv venv
+.\venv\Scripts\activate      # Windows
+# or: source venv/bin/activate  # Linux/Mac
+pip install -r requirements.txt
 ```
 
-**File:** `configs/lm-studio.json`
+**Configuration:**
 
 ```json
 {
   "mcpServers": {
     "wie": {
-      "url": "http://localhost:8000/mcp"
+      "command": "python",
+      "args": ["-m", "src.server", "stdio"]
     }
   }
 }
 ```
 
+> **Reference files:** `configs/claude-desktop.json`, `configs/cursor.json`, `configs/zed.json`, `configs/windsurf.json`, `configs/vscode-cline.json`
+
+### Where to place the config
+
+| Client | Configuration file path |
+|--------|------------------------|
+| Claude Desktop (Mac) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Cursor | Settings → MCP → Add new server |
+| Zed | `.zed/settings.json` |
+| Windsurf | Settings → MCP → Add new server |
+| VS Code + Cline | `.vscode/mcp.json` |
+| LM Studio | Settings → MCP Servers |
+
 ---
 
-## 📖 Usage Examples
+## Available tools
 
-### Basic Search
+WIE exposes **6 MCP tools**:
 
-```
-web_search({
-  "query": "latestSpaceX Starship launch",
-  "time_range": "day"
-})
-```
+### `web_search` — general web search
 
-### Advanced Deep Research
+Multi-engine search with source authority tier scoring (tiers 1–4) and optional FlashRank reranking.
 
-```
-web_search_advanced(
-    query="impact of LLMs on software development",
-    search_type="deep",
-    category="research_paper",
-    num_results=20,
-    enable_highlights=True,
-    enable_summary=True
+```python
+web_search(
+    query="Python 3.13 release notes",
+    time_range="month",   # hour | day | week | month | year (optional)
+    categories="news",    # general | news | images | videos | it | science (optional)
+    safesearch="0",       # "0"=off | "1"=moderate | "2"=strict (optional)
+    limit=10,             # 1–20, default: 10
 )
 ```
 
-### Batch Content Fetch with Highlights
+---
 
+### `web_search_advanced` — advanced search with filters
+
+Search with query expansion, domain filters, date filters, category targeting, and variable depth modes.
+
+```python
+web_search_advanced(
+    query="impact of LLMs on software development",
+    search_type="deep",               # see table below
+    num_results=15,                   # default: 10
+    category="research_paper",        # see categories below
+    include_domains=["arxiv.org"],    # only these domains
+    exclude_domains=["reddit.com"],   # ignore these domains
+    start_published_date="2024-01-01",  # YYYY-MM-DD
+    end_published_date="2025-01-01",
+    include_text=["transformer"],     # page must contain these words
+    exclude_text=["tutorial"],        # page must not contain these words
+    safesearch=0,                     # 0 | 1 | 2
+    enable_highlights=True,           # extract relevant passages
+    highlight_sentences=3,            # sentences per passage (default: 3)
+    enable_summary=False,             # extractive summary per result
+    additional_queries=True,          # use query expansion for deep modes
+)
 ```
+
+**Search types (`search_type`):**
+
+| Type | Query variations | Reranking | Highlights | Use case |
+|------|-----------------|-----------|------------|----------|
+| `instant` | 1 | ❌ | ❌ | Ultra-fast, top 3 results |
+| `fast` | 1 | ❌ | ❌ | Quick, single-pass search |
+| `auto` | 1 | ✅ | ✅ | **Default** — best balance |
+| `deep_lite` | 3 | ✅ | ✅ | Moderate research |
+| `deep` | 5 | ✅ | ✅ | Thorough research |
+| `deep_reasoning` | 7 | ✅ | ✅ | Complex investigation |
+
+**Categories (`category`):**
+
+| Category | Prioritized domains |
+|----------|---------------------|
+| `general` | All engines |
+| `news` | BBC, Reuters, AP News, NYT, The Guardian |
+| `research_paper` | arXiv, Nature, IEEE, ACM, NeurIPS |
+| `company` | LinkedIn, Bloomberg, Crunchbase |
+| `people` | LinkedIn, GitHub, Google Scholar |
+| `financial_report` | SEC EDGAR |
+| `product` | Product Hunt, G2, Capterra |
+| `personal_site` | Medium, Dev.to, Substack |
+| `code` | GitHub, GitLab, Stack Overflow |
+| `video` | YouTube, Vimeo, TED |
+| `image` | Unsplash, Flickr, Pexels |
+
+---
+
+### `site_search` — search within a specific domain
+
+Issues a `site:domain query` search — useful for finding official documentation or domain-specific content.
+
+```python
+site_search(
+    query="async io concurrency",
+    site="docs.python.org",
+    time_range="year",   # optional
+    limit=5,             # default: 5
+)
+```
+
+---
+
+### `fetch_page` — extract content from a URL
+
+Extracts clean text content from a web page. Tries `curl-cffi` (anti-bot stealth) first, falls back to `nodriver` (headless browser), then `httpx`.
+
+```python
+fetch_page(
+    url="https://docs.python.org/3/whatsnew/3.13.html",
+    max_tokens=8000,   # optional, default: 8000
+)
+```
+
+Returns: title, description, headings, main content, tables, JSON-LD structured data, and a link summary.
+
+---
+
+### `get_contents` — fetch content from multiple URLs
+
+Parallel fetch of up to 20 URLs (max 3 concurrent). Can extract highlights and summaries per page.
+
+```python
 get_contents(
     urls=[
         "https://arxiv.org/abs/2401.04012",
-        "https://github.com/anthropic/claude-code"
+        "https://github.com/openai/gpt-2",
     ],
-    highlight_query="LLM code generation capabilities",
-    enable_summary=True
-)
-```
-
-### Extractive Q&A
-
-```
-answer({
-  "query": "What is the context window size for Claude 3.5?",
-  "urls": ["https://docs.anthropic.com/en/docs/about-claude/all-releases"]
-})
-```
-
-### Domain-Specific Search
-
-```
-site_search({
-  "query": "async io concurrency",
-  "site": "docs.python.org"
-})
-```
-
-### Category-Specific Research
-
-```
-web_search_advanced(
-    query="Tesla stock performance 2024",
-    search_type="deep",
-    category="financial_report",
-    start_published_date="2024-01-01"
-)
-
-web_search_advanced(
-    query="machine learning transformers attention",
-    search_type="deep",
-    category="research_paper",
-    include_domains=["arxiv.org", "papers.nips.cc"]
-)
-
-web_search_advanced(
-    query="John Carmack career biography",
-    search_type="deep",
-    category="people"
+    highlight_query="large language model training",   # optional
+    highlight_sentences=3,                              # default: 3
+    enable_summary=False,                               # default: False
+    max_tokens=8000,                                    # per URL, default: 8000
 )
 ```
 
 ---
 
-## 🤖 Agent Skills
+### `answer` — direct answer from URLs
 
-Ready-to-use research prompts for autonomous investigation.
+Fetches the provided URLs, extracts the most relevant passages for the question, and returns an extractive answer.
 
-### Company Research
-
-```
-You are a professional company researcher. Investigate [COMPANY NAME] using the following approach:
-
-1. Use web_search_advanced with category="company" to find official sources
-2. Search for recent news, financial reports, and official statements
-3. Use get_contents to extract detailed information from their website and press releases
-4. Use answer to extract key facts about products, leadership, and recent developments
-5. Compile findings into a comprehensive company profile with:
-   - Company overview and mission
-   - Recent performance and news
-   - Leadership and key personnel
-   - Products or services offered
-   - Financial position (if public)
-```
-
-### People Search
-
-```
-You are a professional investigator specializing in people search. Find comprehensive information about [PERSON NAME] by:
-
-1. Use web_search_advanced with category="people" for biographical sources
-2. Search for professional profiles (LinkedIn, Crunchbase), Wikipedia, and personal websites
-3. Use get_contents to extract detailed biographical information
-4. Use answer to extract career history, achievements, and notable facts
-5. Return a detailed profile including:
-   - Professional background and career
-   - Notable achievements and contributions
-   - Current affiliation
-   - Educational background
-```
-
-### Research Paper Investigation
-
-```
-You are an academic researcher. Conduct a thorough investigation of [TOPIC/ PAPER] by:
-
-1. Use web_search_advanced with category="research_paper", targeting arxiv.org and academic databases
-2. Search for the paper title, authors, and key concepts
-3. Use get_contents to extract the full paper content
-4. Use answer to extract:
-   - Main contribution and innovations
-   - Methodology used
-   - Key results and conclusions
-   - Limitations and future work
-5. Return a structured academic summary with citations
-```
-
-### Financial Report Analysis
-
-```
-You are a financial analyst. Analyze [COMPANY/TOPIC] financial reports by:
-
-1. Use web_search_advanced with category="financial_report" to find SEC filings, earnings reports
-2. Search for annual reports (10-K), quarterly reports (10-Q), and investor presentations
-3. Use get_contents to extract detailed financial data
-4. Use answer to extract key financial metrics, ratios, and narrative
-5. Return a financial summary with:
-   - Revenue and profit trends
-   - Key financial ratios
-   - Significant events or changes
-   - Investment highlights and risks
-```
-
-### Code Context for Development
-
-```
-You are a senior software engineer. Investigate [LIBRARY/ FRAMEWORK/ API] for code context by:
-
-1. Use web_search_advanced with category="code", targeting GitHub, StackOverflow, and official docs
-2. Search for usage examples, tutorials, and API documentation
-3. Use get_contents to extract code examples and official documentation
-4. Use answer to extract:
-   - API signatures and parameters
-   - Common usage patterns
-   - Best practices and gotchas
-   - Version compatibility information
-5. Return comprehensive code documentation with examples
-```
-
-### Deep Investigation
-
-```
-You are a senior investigative researcher. Conduct a deep investigation of [COMPLEX TOPIC] using chain-of-thought reasoning:
-
-1. Use web_search_advanced with type="deep_reasoning" for comprehensive multi-perspective analysis
-2. Generate multiple query variations to explore different angles:
-   - Historical background and origins
-   - Current state and recent developments
-   - Key stakeholders and perspectives
-   - Controversies and debates
-   - Future implications and predictions
-3. Use get_contents to extract detailed information from authoritative sources
-4. Use answer to synthesize findings across multiple sources
-5. Cross-reference claims and identify consensus vs. disputed points
-6. Return a comprehensive investigation report with:
-   - Executive summary
-   - Detailed findings from each perspective
-   - Evidence and citations
-   - Areas of consensus and dispute
-   - Implications and recommendations
+```python
+answer(
+    query="What is the maximum context window for Claude 3.5?",
+    urls=["https://docs.anthropic.com/en/docs/about-claude/all-releases"],
+)
 ```
 
 ---
 
-## 📊 Authority Tiers
+## Source authority tiers
 
-Results are classified by source reliability:
+All search results are classified into 4 reliability tiers:
 
-| Tier | Description | Examples |
-|------|-------------|----------|
-| **🟢 Tier 1** | Definitive / Official | `docs.python.org`, `github.com`, `.gov`, `.edu` |
-| **🔵 Tier 2** | Authoritative | Wikipedia, Stack Overflow, Arxiv |
-| **🟡 Tier 3** | Reference | Tech blogs, News outlets, Publications |
-| **⚪ Tier 4** | Other | Reddit, Generic blogs, SEO content |
+| Tier | Emoji | Description | Examples |
+|------|-------|-------------|----------|
+| Tier 1 | 🟢 | Official / Definitive | `github.com`, `docs.python.org`, `.gov`, `.edu` |
+| Tier 2 | 🔵 | Authoritative | `wikipedia.org`, `stackoverflow.com`, `arxiv.org` |
+| Tier 3 | 🟡 | Reference | `medium.com`, `reuters.com`, `dev.to` |
+| Tier 4 | ⚪ | General | Generic blogs, Reddit, SEO content |
 
 ---
 
-## 📁 Project Structure
+## Environment variables
+
+All variables are configured in the `.env` file:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEARXNG_HOST` | `http://searxng:8080` | Internal SearXNG URL |
+| `SEARXNG_ENGINES` | `google,duckduckgo,bing,wikipedia,startpage` | Active engines (comma-separated) |
+| `SEARXNG_DEFAULT_CATEGORY` | `general` | Default category when not specified |
+| `SEARXNG_SAFESEARCH` | `0` | Safe search level: `0`, `1`, or `2` |
+| `SEARXNG_SECRET` | *(required)* | SearXNG secret key — **change before use** |
+| `SEARCH_DEFAULT_TYPE` | `auto` | Default search type: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` |
+| `SEARCH_DEFAULT_LIMIT` | `10` | Default result limit (1–20) |
+| `SEARCH_TIMEOUT_SECONDS` | `10` | Search timeout in seconds |
+| `FETCH_TIMEOUT_SECONDS` | `15` | Page fetch timeout in seconds |
+| `FETCH_MAX_CONTENT_LENGTH` | `10000` | Max characters extracted per page |
+| `FETCH_TOKEN_BUDGET` | `8000` | Token budget per page |
+| `MCP_SERVER_HOST` | `0.0.0.0` | Host address for the MCP server |
+| `MCP_SERVER_PORT` | `8000` | MCP server port |
+| `API_KEY` | *(empty)* | Optional API key to restrict server access |
+
+---
+
+## Project structure
 
 ```
 WIE_MCP/
 ├── src/
-│   ├── server.py                  # MCP server entry point
-│   ├── config.py                  # Pydantic settings & configuration
-│   ├── constants.py               # Domain tiers, search types (single source of truth)
-│   ├── models.py                  # Request/response schemas
-│   ├── errors.py                  # Error classes
-│   ├── searxng_client.py          # Shared SearXNG HTTP client
+│   ├── server.py              # MCP server — registers all 6 tools
+│   ├── config.py              # Configuration via Pydantic Settings + .env
+│   ├── constants.py           # Domain tiers, search types, categories
+│   ├── models.py              # Pydantic schemas (request/response)
+│   ├── errors.py              # Typed error classes
+│   ├── searxng_client.py      # HTTP client for SearXNG
 │   ├── tools/
-│   │   ├── web_search.py          # Basic discovery search
-│   │   ├── web_search_advanced.py # Full advanced search with filters
-│   │   ├── fetch_page.py          # Single URL content extraction
-│   │   ├── get_contents.py        # Batch content + highlights
-│   │   ├── site_search.py         # Domain-specific search
-│   │   └── answer.py              # Extractive Q&A
+│   │   ├── web_search.py          # web_search tool
+│   │   ├── web_search_advanced.py # web_search_advanced tool
+│   │   ├── fetch_page.py          # fetch_page tool
+│   │   ├── get_contents.py        # get_contents tool
+│   │   ├── site_search.py         # site_search tool
+│   │   └── answer.py              # answer tool
 │   └── utils/
-│       ├── dedup.py               # Deduplication & scoring
-│       ├── highlights.py          # Highlight extraction
-│       ├── summarizer.py          # Extractive summarizer
-│       ├── text.py                # Shared sentence splitter
-│       └── query_expander.py      # Query expansion
-├── configs/                        # MCP client configurations
-├── docs/
-│   └── superpowers/
-│       └── specs/                 # Design specifications
-├── docker-compose.yml             # Docker Compose (MCP + SearxNG)
-├── Dockerfile                     # Container definition
-├── requirements.txt              # Python dependencies
-└── .env.example                 # Environment template
+│       ├── dedup.py               # Result deduplication and scoring
+│       ├── highlights.py          # Relevant passage extraction
+│       ├── summarizer.py          # Extractive summarization
+│       ├── text.py                # Sentence splitter
+│       ├── query_expander.py      # Query expansion for deep modes
+│       ├── readability.py         # Readable content extraction
+│       └── truncation.py          # Token-based truncation
+├── configs/
+│   ├── claude-desktop.json    # Claude Desktop config (STDIO)
+│   ├── cursor.json            # Cursor config (STDIO)
+│   ├── zed.json               # Zed config (STDIO)
+│   ├── windsurf.json          # Windsurf config (STDIO)
+│   ├── vscode-cline.json      # VS Code + Cline config (STDIO)
+│   ├── http-remote.json       # HTTP config (Docker)
+│   └── lm-studio.json         # LM Studio config (HTTP)
+├── searxng/
+│   └── settings.yml           # SearXNG configuration
+├── docker-compose.yml         # Starts wie-mcp-server + wie-searxng
+├── Dockerfile                 # MCP server container image
+├── requirements.txt           # Python dependencies
+├── .env.example               # Environment variables template
+└── pytest.ini                 # Test configuration
 ```
 
 ---
 
-## 🐳 Docker Deployment
+## Key dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `mcp` | MCP protocol (FastMCP) |
+| `httpx` | Async HTTP requests |
+| `pydantic` + `pydantic-settings` | Validation and configuration |
+| `beautifulsoup4` + `readability-lxml` | HTML parsing and content extraction |
+| `curl-cffi` | HTTP client with bot-detection bypass |
+| `nodriver` | Headless browser fallback |
+| `flashrank` | Local relevance reranking (optional) |
+| `uvicorn` + `starlette` | HTTP server for Streamable HTTP mode |
+
+---
+
+## Useful commands
 
 ```bash
-# Start all services
+# Start everything
 docker compose up -d
 
-# View logs
+# Stream logs
 docker compose logs -f
 
-# Stop services
+# Stop everything
 docker compose down
+
+# Rebuild after code changes
+docker compose up -d --build
+
+# Run tests
+python -m pytest tests/ -v
+
+# Run server locally (STDIO mode)
+python -m src.server stdio
+
+# Run server locally (HTTP mode)
+python -m src.server http
 ```
 
-Services:
-- **wie-mcp-server**: WIE MCP server on port 8000
-- **wie-searxng**: Meta-search engine on port 8080
+---
+
+## Troubleshooting
+
+### "Connection refused" or "Cannot reach SearXNG"
+- Check containers are running: `docker ps`
+- Wait ~30s after `docker compose up -d` for SearXNG to fully initialize
+- Check logs: `docker logs wie-searxng`
+
+### No search results
+- SearXNG may have misconfigured engines
+- Check `searxng/settings.yml` and ensure the engines are enabled
+
+### Port already in use
+- Change the port in `docker-compose.yml`:
+  ```yaml
+  ports:
+    - "8001:8000"   # uses port 8001 on the host
+  ```
+- Update the client config URL to `http://localhost:8001/mcp`
+
+### Accessing from another machine
+- Replace `localhost` with the IP of the machine running Docker:
+  ```json
+  { "url": "http://192.168.1.100:8000/mcp" }
+  ```
 
 ---
 
-## 🔒 Security
-
-- **SSRF protection**: DNS validation, private IP blocking
-- **URL validation**: Scheme and netloc required
-- **API key middleware**: Optional Bearer token auth
-- **Zero logging**: No user data stored or logged
-
----
-
-## 📜 License
+## License
 
 **GNU Affero General Public License v3 (AGPLv3)** — [LICENSE](LICENSE)
 
-Copyright (C) 2025-2026 Jonathan Lima
-
----
-
-## 🔧 Troubleshooting
-
-### "Connection refused"
-- Check if container is running: `docker ps`
-- Check logs: `docker logs wie-mcp-server`
-
-### "Timeout"
-- Use the URL `/mcp` (Streamable HTTP), not `/sse`
-
-### "Invalid params"
-- Verify the URL is correct: must end with `/mcp`
-
-### Remote Access
-
-To access from another computer, replace `localhost` with the host IP:
-
-```json
-{
-  "mcpServers": {
-    "wie": {
-      "url": "http://192.168.1.100:8000/mcp"
-    }
-  }
-}
-```
-
-### Environment Variables
-
-WIE_MCP supports standard environment variables configured via system environment or a `.env` file:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SEARXNG_HOST` | Host address of the SearxNG meta-search engine | `http://searxng:8080` |
-| `SEARXNG_ENGINES` | Comma-separated engines enabled in SearxNG | `google,duckduckgo,bing,wikipedia,startpage` |
-| `SEARXNG_DEFAULT_CATEGORY` | Default search category | `general` |
-| `SEARXNG_SAFESEARCH` | Safe search level: `0` (off), `1` (moderate), `2` (strict) | `0` |
-| `SEARCH_DEFAULT_TYPE` | Default search mode: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` | `auto` |
-| `SEARCH_DEFAULT_LIMIT` | Default limit of results returned by discovery search | `10` |
-| `SEARCH_TIMEOUT_SECONDS` | Search timeout in seconds | `10.0` |
-| `FETCH_TIMEOUT_SECONDS` | Timeout in seconds for page fetching | `15.0` |
-| `FETCH_MAX_CONTENT_LENGTH` | Max characters to extract from a web page | `10000` |
-| `FETCH_TOKEN_BUDGET` | Approximate token budget for extracted page content | `8000` |
-| `MCP_SERVER_HOST` | Host address the MCP server binds to | `0.0.0.0` |
-| `MCP_SERVER_PORT` | Port for the MCP server endpoint | `8000` |
-| `API_KEY` | Optional API key to restrict access to the server | *(none)* |
-
-### Custom Port
-
-To change the port (e.g., 8090):
-
-```yaml
-# docker-compose.yml
-ports:
-  - "8090:8000"
-
-# Client configuration
-"url": "http://localhost:8090/mcp"
-```
+Copyright © 2025–2026 Jonathan Lima
