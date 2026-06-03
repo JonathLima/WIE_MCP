@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "investigator": {
+    "wie": {
       "url": "http://localhost:8000/mcp"
     }
   }
-}
+}

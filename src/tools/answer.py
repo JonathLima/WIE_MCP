@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from src.models import AnswerRequest
+from src.utils.formatting import format_tool_error
 from src.utils.summarizer import extractive_summary
 from src.utils.highlights import extract_highlights
 
 logger = logging.getLogger(__name__)
 
 async def _fetch_and_extract(url: str, query: str, max_tokens: int) -> str:
-    from src.tools.web_fetch import fetch_page
+    from src.tools.fetch_page import fetch_page
     try:
         content = await fetch_page(url, max_tokens=max_tokens)
         lines = [line for line in content.split("\n") if not line.startswith("#") and line.strip()]
@@ -25,8 +27,18 @@ async def _fetch_and_extract(url: str, query: str, max_tokens: int) -> str:
 async def answer(query: str, urls: list[str]) -> str:
     logger.info(f"answer: query={query!r}, urls={urls}")
 
-    if not urls:
-        return "## ❌ No URLs provided\nProvide URLs to answer the question."
+    # Validate parameters
+    try:
+        AnswerRequest(query=query, urls=urls)
+    except Exception as exc:
+        return format_tool_error(
+            error_code="VALIDATION_ERROR",
+            message=f"Invalid answer parameters: {exc}",
+            retry_guidance=(
+                "Ensure query is a non-empty string and urls is a "
+                "non-empty list with at most 20 URLs."
+            ),
+        )
 
     semaphore = asyncio.Semaphore(3)
 
@@ -43,11 +55,12 @@ async def answer(query: str, urls: list[str]) -> str:
     combined = "\n\n".join(passages)
     answer_text = extractive_summary(combined, num_sentences=4)
 
-    lines = [f"## 💡 Answer to: \"{query}\""]
-    lines.append("")
+    lines = [f'## Answer: "{query}"', ""]
     lines.append(answer_text)
     lines.append("")
     lines.append("---")
-    lines.append(f"*Sources: {', '.join(urls)}*")
+    lines.append(f"Sources ({len(urls)}):")
+    for url in urls:
+        lines.append(f"- {url}")
 
     return "\n".join(lines)

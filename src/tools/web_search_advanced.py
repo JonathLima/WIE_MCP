@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import logging
 import asyncio
-from typing import Optional, cast
+from typing import Optional
 
 import httpx
 
 from src.config import get_searxng_config, get_server_config
 from src.constants import SEARCH_TYPE_CONFIG, CATEGORY_ENGINES
-from src.models import SearchResultAdvanced
+from src.models import SearchRequestAdvanced, SearchResultAdvanced
+from src.searxng_client import fetch_search_results
+from src.utils.formatting import format_tool_error
 from src.utils.dedup import normalize_url, get_domain_tier
 from src.utils.query_expander import QueryExpander
 from src.utils.highlights import extract_highlights
@@ -18,13 +20,6 @@ logger = logging.getLogger(__name__)
 
 _expander = QueryExpander()
 
-async def _fetch_from_searxng(params: dict, timeout: float) -> list[dict]:
-    config = get_searxng_config()
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.get(config.search_url, params=params)
-        response.raise_for_status()
-        data = response.json()
-    return data.get("results", [])
 
 async def _execute_search(
     query: str,
@@ -53,7 +48,6 @@ async def _execute_search(
     if category:
         base_params["categories"] = category
 
-    all_results: list[dict] = []
     semaphore = asyncio.Semaphore(3)
 
     async def fetch_variation(var_query: str, weight: float):
@@ -61,13 +55,13 @@ async def _execute_search(
             params = base_params.copy()
             params["q"] = var_query
             try:
-                results = await _fetch_from_searxng(params, timeout * type_config.timeout_multiplier)
+                results = await fetch_search_results(params, timeout * type_config.timeout_multiplier)
                 for r in results:
                     r["_query_weight"] = weight
-                return results
+                return results, None
             except Exception as e:
                 logger.warning(f"Query variation failed: {var_query} — {e}")
-                return []
+                return [], e
 
     tasks = [
         fetch_variation(v["query"], float(v["weight"]))
@@ -75,10 +69,20 @@ async def _execute_search(
     ]
 
     variation_results = await asyncio.gather(*tasks)
-    for vr in variation_results:
-        all_results.extend(vr)
+
+    all_results: list[dict] = []
+    errors: list[Exception] = []
+    for vr, err in variation_results:
+        if err:
+            errors.append(err)
+        else:
+            all_results.extend(vr)
+
+    if len(errors) == len(tasks) and errors:
+        raise errors[-1]
 
     return all_results
+
 
 def _apply_domain_filters(
     results: list[dict],
@@ -113,6 +117,7 @@ def _apply_domain_filters(
         filtered.append(r)
 
     return filtered
+
 
 def _apply_date_filters(
     results: list[dict],
@@ -151,6 +156,7 @@ def _apply_date_filters(
 
     return filtered
 
+
 def _build_advanced_result(
     raw: dict,
     query: str,
@@ -177,79 +183,118 @@ def _build_advanced_result(
         title=raw.get("title", ""),
         url=url,
         snippet=snippet,
-        publishedDate=raw.get("publishedDate") or raw.get("pubdate"),
+        published_date=raw.get("publishedDate") or raw.get("pubdate"),
         author=raw.get("author"),
         domain=hostname,
-        domainTier=tier,
+        domain_tier=tier,
         score=min(base_score + (50 if tier == 1 else 25 if tier == 2 else 10), 100),
         highlights=highlights,
         summary=summary,
-        wordCount=len(snippet.split()) if snippet else 0,
+        word_count=len(snippet.split()) if snippet else 0,
     )
+
+
+_TIER_EMOJI: dict[int, str] = {1: "🟢", 2: "🔵", 3: "🟡", 4: "⚪"}
+
 
 def _format_advanced_response(
     query: str,
     results: list[SearchResultAdvanced],
     search_type: str,
-    total_found: int,
     additional_queries: list[str],
 ) -> str:
     if not results:
-        lines = ["## No Results Found", f"No results for: **{query}**"]
-        return "\n".join(lines)
+        return f"## No Results Found\nNo results for: `{query}`"
 
-    type_label = f"{search_type.upper()} Search"
-    lines = [f"## {type_label} ({len(results)} results)"]
-    lines.append(f"**Query:** `{query}`")
-    lines.append("")
+    lines = [
+        f"## Search Results — {len(results)} results  [{search_type.upper()}]",
+        f"Query: `{query}`",
+        "",
+    ]
 
     for i, r in enumerate(results, 1):
-        tier_emoji = {1: "🟢", 2: "🔵", 3: "🟡", 4: "⚪"}.get(r.domainTier, "⚪")
+        emoji = _TIER_EMOJI.get(r.domain_tier, "⚪")
         lines.append(f"### {i}. {r.title}")
-        lines.append(f"**URL:** {r.url}")
+        lines.append(f"URL: {r.url}")
+        lines.append(f"Source: {emoji} {r.domain}  ·  Score: {r.score:.0f}/100")
         if r.snippet:
-            lines.append(f"**Snippet:** {r.snippet[:200]}...")
+            lines.append(f"Snippet: {r.snippet[:300]}")
         if r.highlights:
-            lines.append("**Highlights:**")
             for h in r.highlights[:3]:
                 lines.append(f"> {h}")
-        lines.append(f"**Authority:** {tier_emoji} Tier {r.domainTier} | **Score:** {r.score:.0f}/100")
-        if r.publishedDate:
-            lines.append(f"**Date:** {r.publishedDate}")
+        if r.summary:
+            lines.append(f"Summary: {r.summary}")
+        if r.published_date:
+            lines.append(f"Published: {r.published_date}")
         lines.append("")
 
     if additional_queries:
-        lines.append("---")
-        lines.append(f"*Additional queries used: {', '.join(additional_queries)}*")
+        lines.append(f"*Expanded queries: {', '.join(additional_queries)}*")
 
     return "\n".join(lines)
 
+
 async def web_search_advanced(
     query: str,
-    type: Optional[str] = None,
-    numResults: int = 10,
+    search_type: Optional[str] = None,
+    num_results: int = 10,
     category: Optional[str] = None,
-    includeDomains: Optional[list[str]] = None,
-    excludeDomains: Optional[list[str]] = None,
-    startPublishedDate: Optional[str] = None,
-    endPublishedDate: Optional[str] = None,
-    startCrawlDate: Optional[str] = None,
-    endCrawlDate: Optional[str] = None,
-    includeText: Optional[list[str]] = None,
-    excludeText: Optional[list[str]] = None,
-    userLocation: Optional[dict] = None,
+    include_domains: Optional[list[str]] = None,
+    exclude_domains: Optional[list[str]] = None,
+    start_published_date: Optional[str] = None,
+    end_published_date: Optional[str] = None,
+    start_crawl_date: Optional[str] = None,
+    end_crawl_date: Optional[str] = None,
+    include_text: Optional[list[str]] = None,
+    exclude_text: Optional[list[str]] = None,
+    user_location: Optional[dict] = None,
     safesearch: Optional[int] = None,
-    enableHighlights: bool = True,
+    enable_highlights: bool = True,
     highlight_sentences: int = 3,
-    enableSummary: bool = False,
-    additionalQueries: bool = True,
+    enable_summary: bool = False,
+    additional_queries: bool = True,
 ) -> str:
-    if type is None:
-        type = get_server_config().default_search_type
+    if search_type is None:
+        search_type = get_server_config().default_search_type
 
-    logger.info(f"web_search_advanced: query={query!r}, type={type}, numResults={numResults}")
+    logger.info(f"web_search_advanced: query={query!r}, search_type={search_type}, num_results={num_results}")
 
-    type_config = SEARCH_TYPE_CONFIG.get(type, SEARCH_TYPE_CONFIG["auto"])
+    # Validate all parameters up front
+    try:
+        SearchRequestAdvanced(
+            query=query,
+            search_type=search_type,
+            num_results=num_results,
+            category=category,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            start_published_date=start_published_date,
+            end_published_date=end_published_date,
+            start_crawl_date=start_crawl_date,
+            end_crawl_date=end_crawl_date,
+            include_text=include_text,
+            exclude_text=exclude_text,
+            user_location=user_location,
+            safesearch=safesearch,
+            enable_highlights=enable_highlights,
+            highlight_sentences=highlight_sentences,
+            enable_summary=enable_summary,
+            additional_queries=additional_queries,
+        )
+    except Exception as exc:
+        return format_tool_error(
+            error_code="SEARCH_VALIDATION_ERROR",
+            message=f"Invalid search parameters: {exc}",
+            retry_guidance=(
+                "Ensure query is a non-empty string (max 500 chars), "
+                "num_results is 1-100, search_type is one of "
+                "auto/fast/instant/deep_lite/deep/deep_reasoning, "
+                "and all optional fields use valid types."
+            ),
+        )
+
+
+    type_config = SEARCH_TYPE_CONFIG.get(search_type, SEARCH_TYPE_CONFIG["auto"])
     category_engines = CATEGORY_ENGINES.get(category) if category else None
 
     config = get_searxng_config()
@@ -258,25 +303,25 @@ async def web_search_advanced(
     try:
         raw_results = await _execute_search(
             query=query,
-            search_type=type,
-            num_results=numResults,
+            search_type=search_type,
+            num_results=num_results,
             category=category,
             engines=category_engines,
             timeout=config.timeout,
             safesearch=effective_safesearch,
         )
     except httpx.ConnectError:
-        return "## Connection Error\nCannot connect to SearxNG."
+        return "## Connection Error\nCannot connect to SearXNG. Verify Docker is running."
     except httpx.TimeoutException:
-        return "## Timeout\nSearch timed out."
+        return "## Timeout\nSearch timed out. Try a shorter query."
     except httpx.HTTPStatusError as e:
-        return f"## HTTP Error\n{e.response.status_code}"
+        return f"## HTTP Error {e.response.status_code}\nSearXNG returned an error. Try again."
     except Exception as e:
         logger.error(f"Search error: {e}", exc_info=True)
         return f"## Error\n{str(e)}"
 
-    raw_results = _apply_domain_filters(raw_results, includeDomains, excludeDomains)
-    raw_results = _apply_date_filters(raw_results, startPublishedDate, endPublishedDate)
+    raw_results = _apply_domain_filters(raw_results, include_domains, exclude_domains)
+    raw_results = _apply_date_filters(raw_results, start_published_date, end_published_date)
 
     seen: set[str] = set()
     deduplicated: list[dict] = []
@@ -291,24 +336,23 @@ async def web_search_advanced(
         deduplicated.append(r)
 
     scored_results: list[SearchResultAdvanced] = []
-    for raw in deduplicated[:numResults * 3]:
+    for raw in deduplicated[:num_results * 3]:
         sr = _build_advanced_result(
             raw, query,
-            highlight_sentences=highlight_sentences if enableHighlights else 0,
-            enable_summary=enableSummary and type_config.enable_summary,
+            highlight_sentences=highlight_sentences if enable_highlights else 0,
+            enable_summary=enable_summary and type_config.enable_summary,
         )
         scored_results.append(sr)
 
     scored_results.sort(key=lambda x: -x.score)
 
-    variation_names = [v["query"] for v in _expander.expand(query, type)][:type_config.query_variations]
+    variation_names = [v["query"] for v in _expander.expand(query, search_type)][:type_config.query_variations]
     additional_q: list[str] = [str(x) for x in variation_names[1:]] if len(variation_names) > 1 else []
 
     response_text = _format_advanced_response(
         query=query,
-        results=scored_results[:numResults],
-        search_type=type,
-        total_found=len(raw_results),
+        results=scored_results[:num_results],
+        search_type=search_type,
         additional_queries=additional_q,
     )
 

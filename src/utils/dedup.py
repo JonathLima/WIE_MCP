@@ -9,33 +9,7 @@ from src.models import SearchResult
 
 logger = logging.getLogger(__name__)
 
-TIER1_DOMAINS = {
-    "github.com", "gitlab.com",
-    "docs.python.org", "doc.rust-lang.org", "docs.oracle.com",
-    "developer.mozilla.org", "developer.apple.com", "developer.android.com",
-    "learn.microsoft.com", "cloud.google.com",
-    "nodejs.org", "python.org", "rust-lang.org", "golang.org", "go.dev",
-    "react.dev", "vuejs.org", "angular.io", "svelte.dev",
-    "pytorch.org", "tensorflow.org",
-    "readthedocs.io", "readthedocs.org",
-}
-
-TIER1_SUFFIXES = (".gov", ".edu", ".gov.br", ".edu.br")
-
-TIER2_DOMAINS = {
-    "wikipedia.org", "en.wikipedia.org", "pt.wikipedia.org",
-    "stackoverflow.com", "stackexchange.com", "superuser.com",
-    "arxiv.org", "nature.com", "science.org", "ieee.org", "acm.org",
-    "theverge.com", "arstechnica.com", "infoq.com", "techcrunch.com",
-    "wired.com", "zdnet.com",
-}
-
-TIER3_DOMAINS = {
-    "medium.com", "dev.to", "css-tricks.com", "smashingmagazine.com",
-    "freecodecamp.org", "digitalocean.com", "hashnode.dev",
-    "blog.google", "engineering.fb.com", "netflixtechblog.com",
-    "bbc.com", "reuters.com", "apnews.com", "nytimes.com",
-}
+from src.constants import TIER1_DOMAINS, TIER1_SUFFIXES, TIER2_DOMAINS, TIER3_DOMAINS
 
 def get_domain_tier(url: str) -> int:
     try:

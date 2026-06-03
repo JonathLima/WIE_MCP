@@ -1,11 +1,4 @@
-from __future__ import annotations
-
-import re
-
-def _split_into_sentences(text: str) -> list[str]:
-    sentence_endings = re.compile(r'(?<=[.!?])\s+')
-    sentences = sentence_endings.split(text)
-    return [s.strip() for s in sentences if s.strip()]
+from src.utils.text import split_into_sentences as _split_into_sentences
 
 def extractive_summary(
     text: str,

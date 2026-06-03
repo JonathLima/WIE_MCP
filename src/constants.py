@@ -65,7 +65,10 @@ SEARCH_TYPE_CONFIG: dict[str, SearchTypeConfig] = {
     ),
 }
 
-DOMAIN_TIER_1_LIST = {
+# === Domain Authority Tiers ===
+# Single source of truth. dedup.py and web_search_advanced.py import from here.
+
+TIER1_DOMAINS: frozenset[str] = frozenset({
     "github.com", "gitlab.com", "bitbucket.org",
     "docs.python.org", "doc.rust-lang.org", "docs.oracle.com",
     "developer.mozilla.org", "developer.apple.com", "developer.android.com",
@@ -74,32 +77,33 @@ DOMAIN_TIER_1_LIST = {
     "react.dev", "vuejs.org", "angular.io", "svelte.dev",
     "pytorch.org", "tensorflow.org", "keras.io",
     "readthedocs.io", "readthedocs.org",
-    ".gov", ".edu", ".gov.uk", ".ac.uk",
     "arxiv.org", "openreview.net", "papers.nips.cc",
     "pypi.org", "npmjs.com", "crates.io", "packagist.org", "rubygems.org",
-}
+})
 
-DOMAIN_TIER_2_LIST = {
+TIER1_SUFFIXES: tuple[str, ...] = (".gov", ".edu", ".gov.br", ".edu.br", ".gov.uk", ".ac.uk")
+
+TIER2_DOMAINS: frozenset[str] = frozenset({
     "wikipedia.org", "en.wikipedia.org", "pt.wikipedia.org",
     "stackoverflow.com", "stackexchange.com", "superuser.com",
     "serverfault.com", "askubuntu.com",
-    "arxiv.org", "nature.com", "science.org", "ieee.org", "acm.org",
+    "nature.com", "science.org", "ieee.org", "acm.org",
     "theverge.com", "arstechnica.com", "infoq.com", "techcrunch.com",
     "wired.com", "zdnet.com", "engadget.com",
     "imdb.com", "metacritic.com",
     "kaggle.com", "huggingface.co",
-}
+})
 
-DOMAIN_TIER_3_LIST = {
+TIER3_DOMAINS: frozenset[str] = frozenset({
     "medium.com", "dev.to", "css-tricks.com", "smashingmagazine.com",
     "freecodecamp.org", "digitalocean.com", "hashnode.dev",
     "blog.google", "engineering.fb.com", "netflixtechblog.com",
     "bbc.com", "reuters.com", "apnews.com", "nytimes.com",
     "theguardian.com", "washingtonpost.com", "wsj.com", "ft.com",
-    "hackernews.ycombinator.com", "news.ycombinator.com",
+    "news.ycombinator.com",
     "producthunt.com", "indiehackers.com",
     "khanacademy.org", "coursera.org", "udemy.com", "edx.org",
-}
+})
 
 CATEGORY_DOMAINS: dict[str, list[str]] = {
     "research_paper": ["arxiv.org", "openreview.net", "papers.nips.cc", "nature.com",

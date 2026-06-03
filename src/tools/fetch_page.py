@@ -6,12 +6,17 @@ import logging
 import random
 from urllib.parse import urlparse
 
+import httpx
 from bs4 import BeautifulSoup
 
 from src.config import get_fetch_config, FetchConfig
 from src.errors import (
+    MCPToolError,
+    FetchBlockedError,
     FetchConnectionError,
+    FetchHTTPError,
     FetchParseError,
+    FetchTimeoutError,
     FetchURLError,
 )
 from src.models import (
@@ -24,6 +29,7 @@ from src.models import (
 )
 from src.utils.readability import extract_readability_content
 from src.utils.truncation import smart_truncate
+from src.utils.formatting import format_tool_error
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +43,9 @@ except ImportError:
 try:
     import nodriver as uc
     NODRIVER_AVAILABLE = True
-except ImportError:
+except (ImportError, SyntaxError) as exc:
     NODRIVER_AVAILABLE = False
-    logger.warning("nodriver not available, browser fallback disabled")
+    logger.warning("nodriver not available, browser fallback disabled: %s", exc)
 
 _BROWSER_SEMAPHORE: asyncio.Semaphore | None = None
 
@@ -61,6 +67,12 @@ USER_AGENTS: list[str] = [
 ]
 
 CHROME_IMPERSONATIONS = ["chrome", "chrome110", "chrome120", "chrome136"]
+
+_DISCARD_STATUS_CODES = frozenset({403, 429})
+
+def _should_discard_status(sc: int) -> bool:
+    """Return True if the status code should cause html_content to be discarded for fallback."""
+    return sc in _DISCARD_STATUS_CODES or sc >= 500
 
 def _extract_tables(soup: BeautifulSoup) -> list[TableData]:
     tables: list[TableData] = []
@@ -196,15 +208,7 @@ def _format_fetch_response(response: FetchResponse) -> str:
 
     return "\n".join(lines)
 
-def _format_fetch_error(error: ToolErrorResponse) -> str:
-    lines = []
-    lines.append(f"## ⚠️ Fetch Error: `{error.error_code}`")
-    lines.append("")
-    lines.append(f"**{error.message}**")
-    lines.append("")
-    lines.append(f"**How to proceed:** {error.retry_guidance}")
-    lines.append("")
-    return "\n".join(lines)
+
 
 async def _fetch_with_curl_cffi(url: str, config: FetchConfig) -> tuple[str, int, str]:
     if not CURL_CFFI_AVAILABLE:
@@ -251,8 +255,6 @@ async def _fetch_with_nodriver(url: str, config: FetchConfig) -> tuple[str, int,
                     pass
 
 async def _fetch_with_httpx_fallback(url: str, config: FetchConfig) -> tuple[str, int, str]:
-    import httpx
-    
     ua = random.choice(USER_AGENTS)
     headers = {
         "User-Agent": ua,
@@ -268,37 +270,18 @@ async def _fetch_with_httpx_fallback(url: str, config: FetchConfig) -> tuple[str
         response = await client.get(url, headers=headers)
         return response.text, response.status_code, response.headers.get("content-type", "")
 
-async def fetch_page(url: str, max_tokens: int | None = None) -> str:
-    logger.info("fetch_page called: url=%r, max_tokens=%r", url, max_tokens)
 
-    config = get_fetch_config()
-
-    try:
-        request = FetchRequest(url=url, max_tokens=max_tokens)
-    except Exception:
-        error = FetchURLError(f"Invalid URL: {url}")
-        return _format_fetch_error(ToolErrorResponse(
-            error_code=error.error_code,
-            message=str(error),
-            retry_guidance=error.retry_guidance,
-            markdown="",
-        ))
-
+async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> FetchResponse:
+    """Core fetch logic. Returns a FetchResponse. Called by both fetch_page() and _fetch_page_structured()."""
     url_str = str(request.url)
     parsed = urlparse(url_str)
 
     if not parsed.scheme or not parsed.netloc:
-        error = FetchURLError(
+        raise ValueError(
             f"Invalid URL '{url_str}'. Must include http:// or https:// and a valid domain."
         )
-        return _format_fetch_error(ToolErrorResponse(
-            error_code=error.error_code,
-            message=str(error),
-            retry_guidance=error.retry_guidance,
-            markdown="",
-        ))
 
-    token_budget = max_tokens if max_tokens else config.token_budget
+    token_budget = request.max_tokens if request.max_tokens else config.token_budget
     html_content = None
     status_code = 200
     content_type = "text/html"
@@ -309,6 +292,9 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
             logger.info("Attempting fetch with curl_cffi: %s", url_str)
             html_content, status_code, content_type = await _fetch_with_curl_cffi(url_str, config)
             fetch_method = "curl_cffi"
+            if _should_discard_status(status_code):
+                logger.warning("curl_cffi got status %d for %s, discarding", status_code, url_str)
+                html_content = None
         except Exception as exc:
             logger.warning("curl_cffi failed for %s: %s", url_str, exc)
             html_content = None
@@ -318,26 +304,30 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
             logger.info("Attempting fetch with nodriver: %s", url_str)
             html_content, status_code, content_type = await _fetch_with_nodriver(url_str, config)
             fetch_method = "nodriver"
+            if _should_discard_status(status_code):
+                logger.warning("nodriver got status %d for %s, discarding", status_code, url_str)
+                html_content = None
         except Exception as exc:
             logger.warning("nodriver failed for %s: %s", url_str, exc)
             html_content = None
 
     if html_content is None:
+        logger.info("Attempting fetch with httpx fallback: %s", url_str)
         try:
-            logger.info("Attempting fetch with httpx fallback: %s", url_str)
             html_content, status_code, content_type = await _fetch_with_httpx_fallback(url_str, config)
             fetch_method = "httpx"
         except Exception as exc:
-            logger.error("All fetch methods failed for %s: %s", url_str, exc)
-            error = FetchConnectionError(f"Unable to connect to {url_str}")
-            return _format_fetch_error(ToolErrorResponse(
-                error_code=error.error_code,
-                message=str(error),
-                retry_guidance=error.retry_guidance,
-                markdown="",
-            ))
+            if isinstance(exc, httpx.TimeoutException):
+                raise FetchTimeoutError(f"Timeout fetching {url_str}") from exc
+            raise FetchConnectionError(f"Unable to connect to {url_str}") from exc
 
     logger.info("Fetch succeeded with %s: %s (status=%d)", fetch_method, url_str, status_code)
+
+    # Check final status code after all fallback attempts
+    if status_code in (403, 429):
+        raise FetchBlockedError(f"Blocked by {url_str} (HTTP {status_code})")
+    if status_code >= 400:
+        raise FetchHTTPError(f"HTTP {status_code} from {url_str}", status_code=status_code)
 
     if "text/html" not in content_type and "application/xhtml" not in content_type:
         raw_text = html_content
@@ -355,19 +345,26 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
         if was_trunc:
             lines.append("")
             lines.append("> ⚠️ Content was truncated to fit the context window.")
-        return "\n".join(lines)
+        return FetchResponse(
+            url=url_str,
+            status_code=status_code,
+            content_type=content_type,
+            title="",
+            description="",
+            headings=[],
+            content=truncated_text,
+            tables=[],
+            structured_data=[],
+            links=LinkSummary(),
+            was_truncated=was_trunc,
+            markdown="\n".join(lines),
+        )
 
     try:
         soup = BeautifulSoup(html_content, "html.parser")
     except Exception as exc:
         logger.error("Failed to parse HTML from %s: %s", url_str, exc)
-        error = FetchParseError(f"Failed to parse HTML from {url_str}")
-        return _format_fetch_error(ToolErrorResponse(
-            error_code=error.error_code,
-            message=str(error),
-            retry_guidance=error.retry_guidance,
-            markdown="",
-        ))
+        raise FetchParseError(f"Failed to parse HTML from {url_str}") from exc
 
     readability_result = extract_readability_content(
         html_content,
@@ -400,7 +397,6 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
         markdown="",
     )
     fetch_response.markdown = _format_fetch_response(fetch_response)
-
     fetch_response.markdown = f"> **Fetch method:** {fetch_method}\n\n" + fetch_response.markdown
 
     logger.info(
@@ -412,4 +408,42 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
         fetch_response.was_truncated,
     )
 
-    return fetch_response.markdown
+    return fetch_response
+
+
+async def fetch_page(url: str, max_tokens: int | None = None) -> str:
+    logger.info("fetch_page called: url=%r, max_tokens=%r", url, max_tokens)
+    config = get_fetch_config()
+    token_budget = max_tokens or config.token_budget
+    try:
+        request = FetchRequest(url=url, max_tokens=token_budget)
+    except Exception as exc:
+        return f"## Invalid URL\n{exc}"
+    try:
+        response = await _build_fetch_response(request, config)
+        return response.markdown
+    except MCPToolError as exc:
+        return format_tool_error(
+            error_code=exc.error_code,
+            message=str(exc),
+            retry_guidance=exc.retry_guidance,
+        )
+    except Exception as exc:
+        logger.error("fetch_page error for %s: %s", url, exc, exc_info=True)
+        return f"## Fetch Error\n{exc}"
+
+
+async def _fetch_page_structured(url: str, max_tokens: int | None = None) -> FetchResponse:
+    """Internal-only. Returns FetchResponse directly. Used by get_contents to skip markdown parsing.
+    Raises MCPToolError on failure.
+    """
+    config = get_fetch_config()
+    token_budget = max_tokens or config.token_budget
+    try:
+        request = FetchRequest(url=url, max_tokens=token_budget)
+    except Exception as exc:
+        raise FetchURLError(f"Invalid URL '{url}': {exc}") from exc
+    try:
+        return await _build_fetch_response(request, config)
+    except ValueError as exc:
+        raise FetchURLError(str(exc)) from exc

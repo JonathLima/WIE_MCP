@@ -6,7 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 from src.config import get_server_config
 from src.tools.web_search import web_search as do_web_search
-from src.tools.web_fetch import fetch_page as do_fetch_page
+from src.tools.fetch_page import fetch_page as do_fetch_page
 from src.tools.site_search import site_search as do_site_search
 from src.tools.web_search_advanced import web_search_advanced as do_web_search_advanced
 from src.tools.get_contents import get_contents as do_get_contents
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 server_config = get_server_config()
 
 mcp = FastMCP(
-    name="Web Search & Fetch MCP",
+    name="WIE",
     host=server_config.host,
     port=server_config.port,
 )
@@ -64,43 +64,43 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
 @mcp.tool()
 async def web_search_advanced(
     query: str,
-    type: str = "auto",
-    numResults: int = 10,
+    search_type: str = "auto",
+    num_results: int = 10,
     category: str | None = None,
-    includeDomains: list[str] | None = None,
-    excludeDomains: list[str] | None = None,
-    startPublishedDate: str | None = None,
-    endPublishedDate: str | None = None,
-    startCrawlDate: str | None = None,
-    endCrawlDate: str | None = None,
-    includeText: list[str] | None = None,
-    excludeText: list[str] | None = None,
-    userLocation: dict | None = None,
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+    start_published_date: str | None = None,
+    end_published_date: str | None = None,
+    start_crawl_date: str | None = None,
+    end_crawl_date: str | None = None,
+    include_text: list[str] | None = None,
+    exclude_text: list[str] | None = None,
+    user_location: dict | None = None,
     safesearch: int | None = None,
-    enableHighlights: bool = True,
+    enable_highlights: bool = True,
     highlight_sentences: int = 3,
-    enableSummary: bool = False,
-    additionalQueries: bool = True,
+    enable_summary: bool = False,
+    additional_queries: bool = True,
 ) -> str:
     return await do_web_search_advanced(
         query=query,
-        type=type,
-        numResults=numResults,
+        search_type=search_type,
+        num_results=num_results,
         category=category,
-        includeDomains=includeDomains,
-        excludeDomains=excludeDomains,
-        startPublishedDate=startPublishedDate,
-        endPublishedDate=endPublishedDate,
-        startCrawlDate=startCrawlDate,
-        endCrawlDate=endCrawlDate,
-        includeText=includeText,
-        excludeText=excludeText,
-        userLocation=userLocation,
+        include_domains=include_domains,
+        exclude_domains=exclude_domains,
+        start_published_date=start_published_date,
+        end_published_date=end_published_date,
+        start_crawl_date=start_crawl_date,
+        end_crawl_date=end_crawl_date,
+        include_text=include_text,
+        exclude_text=exclude_text,
+        user_location=user_location,
         safesearch=safesearch,
-        enableHighlights=enableHighlights,
+        enable_highlights=enable_highlights,
         highlight_sentences=highlight_sentences,
-        enableSummary=enableSummary,
-        additionalQueries=additionalQueries,
+        enable_summary=enable_summary,
+        additional_queries=additional_queries,
     )
 
 @mcp.tool()
@@ -108,14 +108,14 @@ async def get_contents(
     urls: list[str],
     highlight_query: str | None = None,
     highlight_sentences: int = 3,
-    enableSummary: bool = False,
+    enable_summary: bool = False,
     max_tokens: int = 8000,
 ) -> str:
     return await do_get_contents(
         urls=urls,
         highlight_query=highlight_query,
         highlight_sentences=highlight_sentences,
-        enableSummary=enableSummary,
+        enable_summary=enable_summary,
         max_tokens=max_tokens,
     )
 

@@ -12,3 +12,18 @@ async def test_answer_returns_string():
         )
         assert isinstance(result, str)
         assert "Python" in result
+
+
+@pytest.mark.asyncio
+async def test_answer_validation_error():
+    # Empty query should fail validation
+    result = await answer(query="", urls=["https://example.com"])
+    assert "VALIDATION_ERROR" in result
+
+    # Empty urls list should fail validation
+    result = await answer(query="What is Python?", urls=[])
+    assert "VALIDATION_ERROR" in result
+
+    # Too many urls should fail validation
+    result = await answer(query="What is Python?", urls=["https://example.com"] * 21)
+    assert "VALIDATION_ERROR" in result

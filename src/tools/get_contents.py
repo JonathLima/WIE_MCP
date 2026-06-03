@@ -4,11 +4,15 @@ import asyncio
 import logging
 from typing import Optional
 
-from src.tools.web_fetch import fetch_page
+from src.models import GetContentsRequest
+from src.tools.fetch_page import _fetch_page_structured
+from src.errors import MCPToolError, FetchBlockedError, FetchHTTPError
+from src.utils.formatting import format_tool_error
 from src.utils.highlights import extract_highlights
 from src.utils.summarizer import extractive_summary
 
 logger = logging.getLogger(__name__)
+
 
 async def _fetch_single_url(
     url: str,
@@ -18,63 +22,100 @@ async def _fetch_single_url(
     max_tokens: int,
 ) -> dict:
     try:
-        content = await fetch_page(url, max_tokens=max_tokens)
-
-        title = ""
-        page_content = ""
-        if "## " in content:
-            parts = content.split("## ", 2)
-            if len(parts) > 1:
-                title = parts[1].split("\n")[0].strip()
-
-        lines = content.split("\n")
-        content_lines = [line for line in lines if not line.startswith("#") and line.strip()]
-        page_content = "\n".join(content_lines)
-
-        highlights = []
-        if highlight_query:
+        response = await _fetch_page_structured(url, max_tokens=max_tokens)
+        
+        highlights: list[str] = []
+        if highlight_query and response.content:
             highlights = extract_highlights(
-                page_content, highlight_query, num_sentences=highlight_sentences
+                response.content, highlight_query, num_sentences=highlight_sentences
             )
 
-        summary = None
-        if enable_summary:
-            summary = extractive_summary(page_content, num_sentences=3)
+        summary: str | None = None
+        if enable_summary and response.content:
+            summary = extractive_summary(response.content, num_sentences=3)
 
         return {
             "url": url,
-            "statusCode": 200,
-            "title": title,
-            "content": page_content,
+            "status_code": response.status_code,
+            "title": response.title,
+            "content": response.content,
             "highlights": highlights,
             "summary": summary,
         }
-    except Exception as e:
-        logger.warning(f"Failed to fetch {url}: {e}")
+    except FetchBlockedError as exc:
+        status_code = 429 if "429" in str(exc) else 403
         return {
             "url": url,
-            "statusCode": 500,
-            "title": "",
-            "content": "",
+            "status_code": status_code,
+            "title": "Blocked",
+            "content": f"Error: {exc}",
             "highlights": [],
             "summary": None,
         }
+    except FetchHTTPError as exc:
+        return {
+            "url": url,
+            "status_code": exc.status_code,
+            "title": f"HTTP Error {exc.status_code}",
+            "content": f"Error: {exc}",
+            "highlights": [],
+            "summary": None,
+        }
+    except MCPToolError as exc:
+        return {
+            "url": url,
+            "status_code": 500,
+            "title": "Error",
+            "content": f"Error: {exc}",
+            "highlights": [],
+            "summary": None,
+        }
+    except Exception as exc:
+        logger.warning("_fetch_single_url failed for %s: %s", url, exc)
+        return {
+            "url": url,
+            "status_code": 500,
+            "title": "Error",
+            "content": f"Unexpected error: {exc}",
+            "highlights": [],
+            "summary": None,
+        }
+
 
 async def get_contents(
     urls: list[str],
     highlight_query: Optional[str] = None,
     highlight_sentences: int = 3,
-    enableSummary: bool = False,
+    enable_summary: bool = False,
     max_tokens: int = 8000,
 ) -> str:
     logger.info(f"get_contents: {len(urls)} URLs")
+
+    # Validate parameters
+    try:
+        GetContentsRequest(
+            urls=urls,
+            highlight_query=highlight_query,
+            highlight_sentences=highlight_sentences,
+            enable_summary=enable_summary,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:
+        return format_tool_error(
+            error_code="VALIDATION_ERROR",
+            message=f"Invalid get_contents parameters: {exc}",
+            retry_guidance=(
+                "Ensure urls is a non-empty list with at most 20 URLs, "
+                "highlight_sentences is 1-10, and max_tokens is 500-128000."
+            ),
+        )
 
     semaphore = asyncio.Semaphore(3)
 
     async def bounded_fetch(url: str):
         async with semaphore:
             return await _fetch_single_url(
-                url, highlight_query, highlight_sentences, enableSummary, max_tokens
+                url, highlight_query, highlight_sentences, enable_summary, max_tokens
             )
 
     results = await asyncio.gather(*[bounded_fetch(u) for u in urls])
@@ -85,7 +126,7 @@ async def get_contents(
     for i, item in enumerate(results, 1):
         lines.append(f"### {i}. {item['title'] or item['url']}")
         lines.append(f"**URL:** {item['url']}")
-        lines.append(f"**Status:** {item['statusCode']}")
+        lines.append(f"**Status:** {item['status_code']}")
 
         if item["highlights"]:
             lines.append("**Highlights:**")
