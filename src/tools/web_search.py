@@ -6,9 +6,10 @@ from urllib.parse import urlparse
 import httpx
 
 from src.config import get_searxng_config
-from src.models import SearchRequest, SearchResult, SearchResponse
+from src.models import SearchRequest, SearchResult, SearchResponse, ToolErrorResponse
 from src.searxng_client import fetch_search_results
 from src.utils.dedup import deduplicate_and_score
+from src.utils.formatting import format_tool_error
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,11 @@ def _format_search_response(response: SearchResponse) -> str:
 
     return "\n".join(lines)
 
+
+def _format_error(error: ToolErrorResponse) -> str:
+    return format_tool_error(error.error_code, error.message, error.retry_guidance)
+
+
 async def get_raw_searxng_results(
     query: str,
     time_range: str | None = None,
@@ -165,7 +171,7 @@ async def web_search(
             limit=limit,
         )
     except Exception as exc:
-        error = ToolErrorResponse(
+        return format_tool_error(
             error_code="SEARCH_VALIDATION_ERROR",
             message=f"Invalid search parameters: {exc}",
             retry_guidance=(
@@ -173,10 +179,7 @@ async def web_search(
                 "limit is between 1-20, and time_range/categories/safesearch "
                 "use valid values."
             ),
-            markdown="",
         )
-        error.markdown = _format_error(error)
-        return error.markdown
 
     config = get_searxng_config()
 

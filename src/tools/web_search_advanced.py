@@ -8,8 +8,9 @@ import httpx
 
 from src.config import get_searxng_config, get_server_config
 from src.constants import SEARCH_TYPE_CONFIG, CATEGORY_ENGINES
-from src.models import SearchResultAdvanced
+from src.models import SearchRequestAdvanced, SearchResultAdvanced
 from src.searxng_client import fetch_search_results
+from src.utils.formatting import format_tool_error
 from src.utils.dedup import normalize_url, get_domain_tier
 from src.utils.query_expander import QueryExpander
 from src.utils.highlights import extract_highlights
@@ -257,6 +258,41 @@ async def web_search_advanced(
         search_type = get_server_config().default_search_type
 
     logger.info(f"web_search_advanced: query={query!r}, search_type={search_type}, num_results={num_results}")
+
+    # Validate all parameters up front
+    try:
+        SearchRequestAdvanced(
+            query=query,
+            search_type=search_type,
+            num_results=num_results,
+            category=category,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            start_published_date=start_published_date,
+            end_published_date=end_published_date,
+            start_crawl_date=start_crawl_date,
+            end_crawl_date=end_crawl_date,
+            include_text=include_text,
+            exclude_text=exclude_text,
+            user_location=user_location,
+            safesearch=safesearch,
+            enable_highlights=enable_highlights,
+            highlight_sentences=highlight_sentences,
+            enable_summary=enable_summary,
+            additional_queries=additional_queries,
+        )
+    except Exception as exc:
+        return format_tool_error(
+            error_code="SEARCH_VALIDATION_ERROR",
+            message=f"Invalid search parameters: {exc}",
+            retry_guidance=(
+                "Ensure query is a non-empty string (max 500 chars), "
+                "num_results is 1-100, search_type is one of "
+                "auto/fast/instant/deep_lite/deep/deep_reasoning, "
+                "and all optional fields use valid types."
+            ),
+        )
+
 
     type_config = SEARCH_TYPE_CONFIG.get(search_type, SEARCH_TYPE_CONFIG["auto"])
     category_engines = CATEGORY_ENGINES.get(category) if category else None

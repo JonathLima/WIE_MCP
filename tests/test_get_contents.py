@@ -33,3 +33,36 @@ async def test_get_contents_highlights():
             highlight_query="Python",
         )
         assert isinstance(result, str)
+
+
+@pytest.mark.asyncio
+async def test_get_contents_validation_error():
+    # Empty URL list should fail validation
+    result = await get_contents(urls=[])
+    assert "VALIDATION_ERROR" in result
+
+    # Invalid max_tokens should fail validation
+    result = await get_contents(urls=["https://example.com"], max_tokens=10)
+    assert "VALIDATION_ERROR" in result
+
+
+@pytest.mark.asyncio
+async def test_get_contents_propagates_fetch_blocked_error():
+    from src.errors import FetchBlockedError
+    with patch("src.tools.get_contents._fetch_page_structured", new_callable=AsyncMock) as mock_structured:
+        mock_structured.side_effect = FetchBlockedError("Blocked by Cloudflare (HTTP 403)")
+        
+        result = await get_contents(urls=["https://blocked.com"])
+        assert "**Status:** 403" in result
+        assert "Error: Blocked by Cloudflare (HTTP 403)" in result
+
+
+@pytest.mark.asyncio
+async def test_get_contents_propagates_fetch_http_error():
+    from src.errors import FetchHTTPError
+    with patch("src.tools.get_contents._fetch_page_structured", new_callable=AsyncMock) as mock_structured:
+        mock_structured.side_effect = FetchHTTPError("HTTP 502 from server", status_code=502)
+        
+        result = await get_contents(urls=["https://error-site.com"])
+        assert "**Status:** 502" in result
+        assert "Error: HTTP 502 from server" in result
