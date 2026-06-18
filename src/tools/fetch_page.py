@@ -30,6 +30,8 @@ from src.models import (
 from src.utils.readability import extract_readability_content
 from src.utils.truncation import smart_truncate
 from src.utils.formatting import format_tool_error
+from src.utils.security import validate_url
+from src.utils.truncation import cap_response
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +165,7 @@ def _format_fetch_response(response: FetchResponse) -> str:
 
     if response.headings:
         lines.append("## Headings")
-        for h in response.headings:
+        for h in response.headings[:20]:
             level = h.get("level", "h").upper()
             text = h.get("text", "")
             if text:
@@ -172,16 +174,17 @@ def _format_fetch_response(response: FetchResponse) -> str:
 
     if response.structured_data:
         lines.append("## Structured Data (JSON-LD)")
-        for sd in response.structured_data:
+        for sd in response.structured_data[:2]:
             if sd.type:
                 lines.append(f"### Type: `{sd.type}`")
             lines.append("```json")
-            lines.append(json.dumps(sd.data, indent=2, ensure_ascii=False))
+            json_str = json.dumps(sd.data, indent=2, ensure_ascii=False)
+            lines.append(json_str[:2000] if len(json_str) > 2000 else json_str)
             lines.append("```")
             lines.append("")
 
     if response.tables:
-        for idx, table in enumerate(response.tables, start=1):
+        for idx, table in enumerate(response.tables[:3], start=1):
             lines.append(f"## Table {idx}")
             if table.headers:
                 lines.append("| " + " | ".join(table.headers) + " |")
@@ -274,6 +277,9 @@ async def _fetch_with_httpx_fallback(url: str, config: FetchConfig) -> tuple[str
 async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> FetchResponse:
     """Core fetch logic. Returns a FetchResponse. Called by both fetch_page() and _fetch_page_structured()."""
     url_str = str(request.url)
+    is_valid, reason = validate_url(url_str)
+    if not is_valid:
+        raise FetchURLError(f"Blocked URL '{url_str}': {reason}")
     parsed = urlparse(url_str)
 
     if not parsed.scheme or not parsed.netloc:
@@ -420,8 +426,17 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
     except Exception as exc:
         return f"## Invalid URL\n{exc}"
     try:
-        response = await _build_fetch_response(request, config)
-        return response.markdown
+        response = await asyncio.wait_for(
+            _build_fetch_response(request, config),
+            timeout=30.0,
+        )
+        return cap_response(response.markdown)
+    except asyncio.TimeoutError:
+        return cap_response(format_tool_error(
+            error_code="FETCH_GLOBAL_TIMEOUT",
+            message=f"Total fetch time for {url} exceeded 30 seconds across all fallback methods.",
+            retry_guidance="The page is too slow to fetch. Try a different URL or search for cached content.",
+        ))
     except MCPToolError as exc:
         return format_tool_error(
             error_code=exc.error_code,

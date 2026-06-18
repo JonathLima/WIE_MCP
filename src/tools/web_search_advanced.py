@@ -15,6 +15,7 @@ from src.utils.dedup import normalize_url, get_domain_tier
 from src.utils.query_expander import QueryExpander
 from src.utils.highlights import extract_highlights
 from src.utils.summarizer import extractive_summary
+from src.utils.truncation import cap_response
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,10 @@ async def _execute_search(
                 logger.warning(f"Query variation failed: {var_query} — {e}")
                 return [], e
 
+    capped_variations = variations[:min(type_config.query_variations, 5)]
     tasks = [
         fetch_variation(v["query"], float(v["weight"]))
-        for v in variations[:type_config.query_variations]
+        for v in capped_variations
     ]
 
     variation_results = await asyncio.gather(*tasks)
@@ -336,7 +338,7 @@ async def web_search_advanced(
         deduplicated.append(r)
 
     scored_results: list[SearchResultAdvanced] = []
-    for raw in deduplicated[:num_results * 3]:
+    for raw in deduplicated[:num_results * 2]:
         sr = _build_advanced_result(
             raw, query,
             highlight_sentences=highlight_sentences if enable_highlights else 0,
@@ -356,4 +358,4 @@ async def web_search_advanced(
         additional_queries=additional_q,
     )
 
-    return response_text
+    return cap_response(response_text)

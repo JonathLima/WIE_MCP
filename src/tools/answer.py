@@ -7,6 +7,7 @@ from src.models import AnswerRequest
 from src.utils.formatting import format_tool_error
 from src.utils.summarizer import extractive_summary
 from src.utils.highlights import extract_highlights
+from src.utils.truncation import cap_response
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +41,14 @@ async def answer(query: str, urls: list[str]) -> str:
             ),
         )
 
+    effective_urls = urls[:5]
     semaphore = asyncio.Semaphore(3)
 
     async def bounded_fetch(url: str):
         async with semaphore:
-            return await _fetch_and_extract(url, query, max_tokens=5000)
+            return await _fetch_and_extract(url, query, max_tokens=3000)
 
-    results = await asyncio.gather(*[bounded_fetch(u) for u in urls])
+    results = await asyncio.gather(*[bounded_fetch(u) for u in effective_urls])
 
     passages = [r for r in results if r]
     if not passages:
@@ -59,8 +61,8 @@ async def answer(query: str, urls: list[str]) -> str:
     lines.append(answer_text)
     lines.append("")
     lines.append("---")
-    lines.append(f"Sources ({len(urls)}):")
-    for url in urls:
+    lines.append(f"Sources ({len(effective_urls)}):")
+    for url in effective_urls:
         lines.append(f"- {url}")
 
-    return "\n".join(lines)
+    return cap_response("\n".join(lines))
