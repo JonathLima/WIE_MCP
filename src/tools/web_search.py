@@ -10,6 +10,7 @@ from src.models import SearchRequest, SearchResult, SearchResponse, ToolErrorRes
 from src.searxng_client import fetch_search_results
 from src.utils.dedup import deduplicate_and_score
 from src.utils.formatting import format_tool_error
+from src.utils.truncation import cap_response
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,7 @@ async def web_search(
             markdown="",
         )
         response.markdown = _format_search_response(response)
-        return response.markdown
+        return cap_response(response.markdown)
 
     response = SearchResponse(
         query=query,
@@ -241,4 +242,4 @@ async def web_search(
         total_found,
     )
 
-    return response.markdown
+    return cap_response(response.markdown)

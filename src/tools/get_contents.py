@@ -10,6 +10,7 @@ from src.errors import MCPToolError, FetchBlockedError, FetchHTTPError
 from src.utils.formatting import format_tool_error
 from src.utils.highlights import extract_highlights
 from src.utils.summarizer import extractive_summary
+from src.utils.truncation import cap_response
 
 logger = logging.getLogger(__name__)
 
@@ -110,15 +111,20 @@ async def get_contents(
             ),
         )
 
+    # Distribute token budget across URLs; cap at 10 URLs max
+    effective_urls = urls[:10]
+    per_url_budget = max(1000, max_tokens // len(effective_urls))
+    per_url_content_chars = min(2000, per_url_budget * 4)  # ~4 chars/token
+
     semaphore = asyncio.Semaphore(3)
 
     async def bounded_fetch(url: str):
         async with semaphore:
             return await _fetch_single_url(
-                url, highlight_query, highlight_sentences, enable_summary, max_tokens
+                url, highlight_query, highlight_sentences, enable_summary, per_url_budget
             )
 
-    results = await asyncio.gather(*[bounded_fetch(u) for u in urls])
+    results = await asyncio.gather(*[bounded_fetch(u) for u in effective_urls])
 
     lines = [f"## 📄 Contents ({len(results)} pages)"]
     lines.append("")
@@ -137,9 +143,9 @@ async def get_contents(
             lines.append(f"**Summary:** {item['summary']}")
 
         lines.append("")
-        lines.append(f"**Content:**\n{item['content'][:2000]}")
+        lines.append(f"**Content:**\n{item['content'][:per_url_content_chars]}")
         lines.append("")
         lines.append("---")
         lines.append("")
 
-    return "\n".join(lines)
+    return cap_response("\n".join(lines))

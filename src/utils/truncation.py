@@ -111,3 +111,20 @@ def truncate_with_priority(
     result += f"Some intermediate content was removed (original ~{current_tokens} tokens).*"
 
     return result, True
+
+
+MAX_RESPONSE_CHARS = 16_000  # ~4K tokens — hard safety net for all tool responses
+
+def cap_response(text: str, max_chars: int = MAX_RESPONSE_CHARS) -> str:
+    """Hard cap on tool response size to prevent context window exhaustion.
+
+    Every MCP tool must call this before returning its final string.
+    """
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars]
+    last_break = truncated.rfind("\n\n")
+    if last_break > max_chars * 0.8:
+        truncated = truncated[:last_break]
+    truncated += "\n\n---\n*Response truncated to fit context window.*"
+    return truncated

@@ -58,6 +58,7 @@ class TestFetchPageBlockedError:
     async def test_final_403_returns_blocked_error(self):
         with patch("src.tools.fetch_page.CURL_CFFI_AVAILABLE", False), \
              patch("src.tools.fetch_page.NODRIVER_AVAILABLE", False), \
+             patch("src.tools.fetch_page.validate_url", return_value=(True, "")), \
              patch("src.tools.fetch_page._fetch_with_httpx_fallback", new_callable=AsyncMock) as mock_httpx:
 
             mock_httpx.return_value = ("<html>forbidden</html>", 403, "text/html")
@@ -96,6 +97,7 @@ class TestFetchPageConnectionFailure:
     async def test_all_methods_fail_returns_connection_error(self):
         with patch("src.tools.fetch_page.CURL_CFFI_AVAILABLE", False), \
              patch("src.tools.fetch_page.NODRIVER_AVAILABLE", False), \
+             patch("src.tools.fetch_page.validate_url", return_value=(True, "")), \
              patch("src.tools.fetch_page._fetch_with_httpx_fallback", new_callable=AsyncMock) as mock_httpx:
 
             mock_httpx.side_effect = ConnectionError("refused")

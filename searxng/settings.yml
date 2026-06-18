@@ -1,5 +1,6 @@
 # See https://docs.searxng.org/admin/settings/settings.html#use-default-settings
 use_default_settings: true
+bot_detection: false
 
 server:
   secret_key: "searxng-mcp-secret-key-change-in-production"
@@ -25,3 +26,9 @@ engines:
     disabled: false
   - name: startpage
     disabled: false
+  - name: ahmia
+    disabled: true
+  - name: torch
+    disabled: true
+  - name: radio browser
+    disabled: true
