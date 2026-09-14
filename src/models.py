@@ -72,6 +72,7 @@ class SearchResponseAdvanced(BaseModel):
     total_found: int
     additional_queries_used: list[str] = Field(default_factory=list)
     incomplete_results: bool = False
+    unresponsive_engines: list[str] = Field(default_factory=list)
 
 # === Get Contents Models ===
 class GetContentsRequest(BaseModel):
@@ -183,6 +184,10 @@ class SearchResponse(BaseModel):
         default_factory=list,
         description="List of engines queried",
     )
+    unresponsive_engines: list[str] = Field(
+        default_factory=list,
+        description="Engines that returned no results or failed",
+    )
     markdown: str = Field(description="Formatted markdown for the LLM")
 
 class FetchRequest(BaseModel):
@@ -243,6 +248,9 @@ class FetchResponse(BaseModel):
         default=False,
         description="Whether content was truncated due to size",
     )
+    content_language: str = Field(default="", description="Detected or declared content language (e.g. 'pt', 'en')")
+    author: str = Field(default="", description="Article author if detected")
+    published_date: str = Field(default="", description="Article publication date if detected")
     markdown: str = Field(description="Formatted markdown for the LLM")
 
 class ToolErrorResponse(BaseModel):

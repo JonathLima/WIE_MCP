@@ -7,7 +7,7 @@ import httpx
 
 from src.config import get_searxng_config
 from src.models import SearchRequest, SearchResult, SearchResponse, ToolErrorResponse
-from src.searxng_client import fetch_search_results
+from src.searxng_client import fetch_search_results, fetch_search_payload
 from src.utils.dedup import deduplicate_and_score
 from src.utils.formatting import format_tool_error
 from src.utils.truncation import cap_response
@@ -63,7 +63,20 @@ def _rerank_with_flashrank(query: str, results: list[SearchResult]) -> list[Sear
         logger.warning("FlashRank reranking failed: %s", exc)
         return results
 
-def _build_search_params(request: SearchRequest) -> dict[str, str]:
+def _normalize_unresponsive_engines(raw: list) -> list[str]:
+    """SearXNG returns unresponsive_engines as [[engine, reason], ...]; flatten to 'engine: reason'."""
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, (list, tuple)):
+            name = item[0] if item else "?"
+            reason = item[1] if len(item) > 1 else "unknown"
+            out.append(f"{name}: {reason}")
+        else:
+            out.append(str(item))
+    return out
+
+
+def _build_search_params(request: SearchRequest, language: str = "auto") -> dict[str, str]:
     config = get_searxng_config()
 
     params: dict[str, str] = {
@@ -80,7 +93,8 @@ def _build_search_params(request: SearchRequest) -> dict[str, str]:
     if request.time_range:
         params["time_range"] = request.time_range
 
-    params["language"] = "en"
+    if language != "auto":
+        params["language"] = language
 
     if request.safesearch is not None:
         params["safesearch"] = request.safesearch
@@ -133,6 +147,7 @@ async def get_raw_searxng_results(
     categories: str | None = None,
     safesearch: str | None = None,
     limit: int = 10,
+    language: str = "auto",
 ) -> list[dict]:
     try:
         request = SearchRequest(
@@ -146,10 +161,10 @@ async def get_raw_searxng_results(
         return []
 
     config = get_searxng_config()
-    params = _build_search_params(request)
+    params = _build_search_params(request, language=language)
     try:
-        raw_results = await fetch_search_results(params, timeout=config.timeout)
-        return raw_results
+        payload = await fetch_search_payload(params, timeout=config.timeout)
+        return payload.get("results", [])
     except Exception:
         return []
 
@@ -159,9 +174,10 @@ async def web_search(
     categories: str | None = None,
     safesearch: str | None = None,
     limit: int = 10,
+    language: str = "auto",
 ) -> str:
-    logger.info("web_search called: query=%r, time_range=%r, categories=%r, limit=%d",
-                query, time_range, categories, limit)
+    logger.info("web_search called: query=%r, time_range=%r, categories=%r, limit=%d, language=%r",
+                query, time_range, categories, limit, language)
 
     try:
         request = SearchRequest(
@@ -184,10 +200,12 @@ async def web_search(
 
     config = get_searxng_config()
 
-    params = _build_search_params(request)
+    params = _build_search_params(request, language=language)
 
     try:
-        raw_results = await fetch_search_results(params, timeout=config.timeout)
+        payload = await fetch_search_payload(params, timeout=config.timeout)
+        raw_results = payload.get("results", [])
+        unresponsive_engines = _normalize_unresponsive_engines(payload.get("unresponsive_engines", []))
         engines_list = [e.strip() for e in params.get("engines", "").split(",") if e.strip()]
     except httpx.ConnectError:
         return (
@@ -214,32 +232,36 @@ async def web_search(
 
     results = results[: request.limit]
 
-    if not results:
-        logger.info("No results found for query: %r", query)
-        response = SearchResponse(
-            query=query,
-            results=[],
-            total_found=total_found,
-            engines_used=engines_list,
-            markdown="",
+    # All engines unresponsive and no results → explicit degradation error
+    if not results and unresponsive_engines:
+        return format_tool_error(
+            error_code="SEARCH_DEGRADED",
+            message=(
+                f"All search engines returned no results for query: {query!r}. "
+                f"Unresponsive engines: {', '.join(unresponsive_engines)}"
+            ),
+            retry_guidance=(
+                "Try a different query, remove language filter, or retry — "
+                "some engines may be temporarily unavailable."
+            ),
         )
-        response.markdown = _format_search_response(response)
-        return cap_response(response.markdown)
 
     response = SearchResponse(
         query=query,
         results=results,
         total_found=total_found,
         engines_used=engines_list,
+        unresponsive_engines=unresponsive_engines,
         markdown="",
     )
     response.markdown = _format_search_response(response)
 
     logger.info(
-        "web_search complete: query=%r, results=%d/%d",
+        "web_search complete: query=%r, results=%d/%d, unresponsive=%d",
         query,
         len(response.results),
         total_found,
+        len(unresponsive_engines),
     )
 
     return cap_response(response.markdown)

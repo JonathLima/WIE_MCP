@@ -87,21 +87,26 @@ def _generate_variations(query: str, purpose: str) -> list[str]:
 
 class QueryExpander:
     def __init__(self):
-        self._cache: dict[tuple[str, str], list[Any]] = {}
+        self._cache: dict[tuple[str, str, str], list[Any]] = {}
 
-    def expand(self, query: str, search_type: str) -> list[Any]:
-        cache_key = (query, search_type)
+    def expand(self, query: str, search_type: str, language: str = "auto") -> list[Any]:
+        cache_key = (query, search_type, language)
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        result = expand_query(query, search_type)
+        result = expand_query(query, search_type, language=language)
         self._cache[cache_key] = result
         return result
 
     def clear_cache(self):
         self._cache.clear()
 
-def expand_query(query: str, search_type: str) -> list[Any]:
+def expand_query(query: str, search_type: str, language: str = "auto") -> list[Any]:
+    # For explicit non-English queries, skip expansion to avoid mixing languages
+    # auto keeps the existing EN-biased expansion behaviour (documented)
+    if language != "auto" and language != "en":
+        return [{"query": query, "purpose": "original", "weight": 1.0}]
+
     strategies = QUERY_VARIATION_STRATEGIES.get(search_type, ["original"])
     weight_map = {
         "original": 1.0,

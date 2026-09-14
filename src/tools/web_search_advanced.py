@@ -30,6 +30,7 @@ async def _execute_search(
     engines: Optional[list[str]],
     timeout: float,
     safesearch: int = 0,
+    language: str = "auto",
 ) -> list[dict]:
     config = get_searxng_config()
     type_config = SEARCH_TYPE_CONFIG.get(search_type, SEARCH_TYPE_CONFIG["auto"])
@@ -38,14 +39,15 @@ async def _execute_search(
 
     engine_str = ",".join(engines) if engines else ",".join(config.engine_list)
 
-    base_params = {
+    base_params: dict = {
         "q": query,
         "format": "json",
         "pageno": "1",
-        "language": "en",
         "safesearch": str(safesearch),
         "engines": engine_str,
     }
+    if language != "auto":
+        base_params["language"] = language
     if category:
         base_params["categories"] = category
 
@@ -255,6 +257,7 @@ async def web_search_advanced(
     highlight_sentences: int = 3,
     enable_summary: bool = False,
     additional_queries: bool = True,
+    language: str = "auto",
 ) -> str:
     if search_type is None:
         search_type = get_server_config().default_search_type
@@ -311,6 +314,7 @@ async def web_search_advanced(
             engines=category_engines,
             timeout=config.timeout,
             safesearch=effective_safesearch,
+            language=language,
         )
     except httpx.ConnectError:
         return "## Connection Error\nCannot connect to SearXNG. Verify Docker is running."

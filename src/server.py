@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from src.config import get_server_config
 from src.tools.web_search import web_search as do_web_search
@@ -27,13 +28,14 @@ mcp = FastMCP(
 )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(title="Web Search", readOnlyHint=True))
 async def web_search(
     query: str,
     time_range: str | None = None,
     categories: str | None = None,
     safesearch: str | None = None,
     limit: int = 10,
+    language: str = "auto",
 ) -> str:
     return await do_web_search(
         query=query,
@@ -41,27 +43,30 @@ async def web_search(
         categories=categories,
         safesearch=safesearch,
         limit=limit,
+        language=language,
     )
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(title="Site Search", readOnlyHint=True))
 async def site_search(
     query: str,
     site: str,
     time_range: str | None = None,
     limit: int = 5,
+    language: str = "auto",
 ) -> str:
     return await do_site_search(
         query=query,
         site=site,
         time_range=time_range,
         limit=limit,
+        language=language,
     )
 
-@mcp.tool()
-async def fetch_page(url: str, max_tokens: int | None = None) -> str:
-    return await do_fetch_page(url=url, max_tokens=max_tokens)
+@mcp.tool(annotations=ToolAnnotations(title="Fetch Page", readOnlyHint=True))
+async def fetch_page(url: str, max_tokens: int | None = None, language: str = "auto") -> str:
+    return await do_fetch_page(url=url, max_tokens=max_tokens, language=language)
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(title="Web Search Advanced", readOnlyHint=True))
 async def web_search_advanced(
     query: str,
     search_type: str = "auto",
@@ -81,6 +86,7 @@ async def web_search_advanced(
     highlight_sentences: int = 3,
     enable_summary: bool = False,
     additional_queries: bool = True,
+    language: str = "auto",
 ) -> str:
     return await do_web_search_advanced(
         query=query,
@@ -101,9 +107,10 @@ async def web_search_advanced(
         highlight_sentences=highlight_sentences,
         enable_summary=enable_summary,
         additional_queries=additional_queries,
+        language=language,
     )
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(title="Get Contents", readOnlyHint=True))
 async def get_contents(
     urls: list[str],
     highlight_query: str | None = None,
@@ -119,7 +126,7 @@ async def get_contents(
         max_tokens=max_tokens,
     )
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(title="Answer", readOnlyHint=True))
 async def answer(query: str, urls: list[str]) -> str:
     return await do_answer(query=query, urls=urls)
 

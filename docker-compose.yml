@@ -9,6 +9,8 @@ services:
     container_name: wie-mcp-server
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - SEARXNG_HOST=http://searxng:8080
       - MCP_SERVER_HOST=0.0.0.0

@@ -36,7 +36,7 @@ class SearxngConfig(BaseSettings):
         description="SearxNG internal URL",
     )
     engines: str = Field(
-        default="google,duckduckgo,bing,wikipedia,startpage",
+        default="google,bing,duckduckgo,brave,qwant,mojeek,sepiasearch,mwmbl,wikipedia,wikidata,google news,bing news,duckduckgo news,reuters,arxiv,semantic scholar,crossref,openalex,europepmc,lemmy posts,lemmy comments,mastodon hashtags,hackernews,github",
         validation_alias=AliasChoices("SEARXNG_ENGINES", "engines"),
         description="Comma-separated list of enabled SearxNG engines",
     )
@@ -109,11 +109,38 @@ class FetchConfig(BaseSettings):
         description="Approximate token budget for extracted content",
     )
     max_redirects: int = Field(default=5, ge=0, le=10, description="Max HTTP redirects to follow")
-    max_concurrent_browsers: int = Field(
-        default=2, 
-        ge=1, 
-        le=10, 
-        description="Max concurrent browser instances for nodriver fallback"
+    fetch_global_timeout: float = Field(
+        default=45.0,
+        gt=0,
+        validation_alias=AliasChoices("FETCH_GLOBAL_TIMEOUT", "fetch_global_timeout"),
+        description="Total timeout in seconds across all fallback methods for a single fetch",
+    )
+    obscura_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("OBSCURA_ENABLED", "obscura_enabled"),
+        description="Use the Obscura stealth browser as the anti-bot fallback",
+    )
+    obscura_stealth: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("OBSCURA_STEALTH", "obscura_stealth"),
+        description="Enable Obscura --stealth (TLS impersonation + fingerprint masking)",
+    )
+    obscura_timeout: float = Field(
+        default=20.0,
+        gt=0,
+        validation_alias=AliasChoices("OBSCURA_TIMEOUT_SECONDS", "obscura_timeout"),
+        description="Obscura per-page timeout in seconds",
+    )
+    obscura_proxy: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBSCURA_PROXY", "obscura_proxy"),
+        description="Optional proxy URL (http:// or socks5://) for Obscura egress",
+    )
+    rate_limit_cooldown: float = Field(
+        default=2.0,
+        ge=0,
+        validation_alias=AliasChoices("FETCH_RATE_LIMIT_COOLDOWN", "rate_limit_cooldown"),
+        description="Minimum seconds between fetches to the same domain",
     )
 
 class ServerConfig(BaseSettings):

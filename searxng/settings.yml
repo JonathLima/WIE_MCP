@@ -10,22 +10,67 @@ server:
 search:
   safe_search: 0
   autocomplete: ""
-  default_lang: ""
+  default_lang: "en"
   formats:
     - html
     - json
 
 engines:
+  # general (web index — surface Reddit/forums/social via site: queries)
   - name: google
-    disabled: false
-  - name: duckduckgo
     disabled: false
   - name: bing
     disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: sepiasearch
+    disabled: false
+  - name: mwmbl
+    disabled: false
   - name: wikipedia
     disabled: false
-  - name: startpage
+  - name: wikidata
     disabled: false
+  # news
+  - name: google news
+    disabled: false
+  - name: bing news
+    disabled: false
+  - name: duckduckgo news
+    disabled: false
+  - name: reuters
+    disabled: false
+  # science / articles / papers
+  - name: arxiv
+    disabled: false
+  - name: semantic scholar
+    disabled: false
+  - name: crossref
+    disabled: false
+  - name: openalex
+    disabled: false
+  - name: europepmc
+    disabled: false
+  # social / forums / code
+  - name: lemmy posts
+    disabled: false
+  - name: lemmy comments
+    disabled: false
+  - name: mastodon hashtags
+    disabled: false
+  - name: hackernews
+    disabled: false
+  - name: github
+    disabled: false
+  # explicitly disabled
+  - name: startpage
+    disabled: true
   - name: ahmia
     disabled: true
   - name: torch

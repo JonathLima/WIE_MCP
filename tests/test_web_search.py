@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, AsyncMock
-from src.tools.web_search import web_search, _format_error
+from src.tools.web_search import web_search, _format_error, _normalize_unresponsive_engines
 from src.models import ToolErrorResponse
 
 
@@ -47,11 +47,31 @@ class TestWebSearchValidation:
 
     @pytest.mark.asyncio
     async def test_valid_params_reach_search(self):
-        with patch("src.tools.web_search.fetch_search_results", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = []
+        with patch("src.tools.web_search.fetch_search_payload", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = {"results": [], "unresponsive_engines": []}
             result = await web_search(query="python release", limit=5)
             assert isinstance(result, str)
             assert "No Results" in result or "Search Results" in result
+
+
+class TestNormalizeUnresponsiveEngines:
+    """SearXNG returns [[engine, reason], ...]; we flatten to 'engine: reason'."""
+
+    def test_flattens_pairs(self):
+        assert _normalize_unresponsive_engines([["brave", "too many requests"], ["duckduckgo", "CAPTCHA"]]) == [
+            "brave: too many requests",
+            "duckduckgo: CAPTCHA",
+        ]
+
+    def test_handles_mixed(self):
+        assert _normalize_unresponsive_engines([["google", "CAPTCHA"], "mwmbl", ["qwant", "access denied"]]) == [
+            "google: CAPTCHA",
+            "mwmbl",
+            "qwant: access denied",
+        ]
+
+    def test_empty(self):
+        assert _normalize_unresponsive_engines([]) == []
 
 
 class TestWebSearchSuccess:
@@ -67,8 +87,20 @@ class TestWebSearchSuccess:
                 "engines": ["google"],
             }
         ]
-        with patch("src.tools.web_search.fetch_search_results", new_callable=AsyncMock) as mock_fetch:
-            mock_fetch.return_value = fake_results
+        with patch("src.tools.web_search.fetch_search_payload", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = {"results": fake_results, "unresponsive_engines": []}
             result = await web_search(query="python 3.12", limit=5)
             assert "Python 3.12" in result
             assert "python.org" in result
+
+    @pytest.mark.asyncio
+    async def test_unresponsive_engines_pairs_do_not_raise(self):
+        """Regression: SearXNG sends unresponsive_engines as [[engine, reason]]; must not crash web_search."""
+        fake_results = [{"title": "X", "url": "https://x.dev", "content": "x", "engines": ["mwmbl"]}]
+        with patch("src.tools.web_search.fetch_search_payload", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = {
+                "results": fake_results,
+                "unresponsive_engines": [["brave", "too many requests"], ["duckduckgo", "CAPTCHA"]],
+            }
+            result = await web_search(query="test", limit=5)
+            assert isinstance(result, str)

@@ -249,7 +249,7 @@ site_search(
 
 ### `fetch_page` — extract content from a URL
 
-Extracts clean text content from a web page. Tries `curl-cffi` (anti-bot stealth) first, falls back to `nodriver` (headless browser), then `httpx`.
+Extracts clean text content from a web page. Tries `curl-cffi` (anti-bot stealth) first, falls back to `obscura` (Rust stealth browser, `--stealth` TLS impersonation), then `httpx`.
 
 ```python
 fetch_page(
@@ -384,7 +384,7 @@ WIE_MCP/
 | `pydantic` + `pydantic-settings` | Validation and configuration |
 | `beautifulsoup4` + `readability-lxml` | HTML parsing and content extraction |
 | `curl-cffi` | HTTP client with bot-detection bypass |
-| `nodriver` | Headless browser fallback |
+| `obscura` | Stealth headless browser fallback (Rust) |
 | `flashrank` | Local relevance reranking (optional) |
 | `uvicorn` + `starlette` | HTTP server for Streamable HTTP mode |
 

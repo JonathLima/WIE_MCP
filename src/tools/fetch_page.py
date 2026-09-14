@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import random
+import re
+import shutil
 from urllib.parse import urlparse
 
 import httpx
@@ -42,21 +45,10 @@ except ImportError:
     CURL_CFFI_AVAILABLE = False
     logger.warning("curl_cffi not available, will use httpx fallback")
 
-try:
-    import nodriver as uc
-    NODRIVER_AVAILABLE = True
-except (ImportError, SyntaxError) as exc:
-    NODRIVER_AVAILABLE = False
-    logger.warning("nodriver not available, browser fallback disabled: %s", exc)
-
-_BROWSER_SEMAPHORE: asyncio.Semaphore | None = None
-
-def _get_browser_semaphore() -> asyncio.Semaphore:
-    global _BROWSER_SEMAPHORE
-    if _BROWSER_SEMAPHORE is None:
-        config = get_fetch_config()
-        _BROWSER_SEMAPHORE = asyncio.Semaphore(config.max_concurrent_browsers)
-    return _BROWSER_SEMAPHORE
+# Obscura: single-binary Rust stealth headless browser. Runs real JS via V8, builds a
+# live DOM, and impersonates TLS (BoringSSL) with --stealth for anti-bot properties.
+OBSCURA_BINARY = os.environ.get("OBSCURA_BINARY", "/usr/local/bin/obscura")
+OBSCURA_AVAILABLE = os.path.exists(OBSCURA_BINARY) or bool(shutil.which("obscura"))
 
 USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -75,6 +67,63 @@ _DISCARD_STATUS_CODES = frozenset({403, 429})
 def _should_discard_status(sc: int) -> bool:
     """Return True if the status code should cause html_content to be discarded for fallback."""
     return sc in _DISCARD_STATUS_CODES or sc >= 500
+
+# ponytail: substring match over a lower-cased body, gated on page size. Challenge
+# interstitials are thin (~a few KB); real articles (which may legitimately *mention*
+# "captcha"/"g-recaptcha"/"hCaptcha") run much larger. Length gate prevents false-positives
+# on substantive pages. Upgrade to a headless DOM probe if a provider slips through.
+_CHALLENGE_MAX_LEN = 20000
+
+_CHALLENGE_PATTERNS: dict[str, tuple[str, ...]] = {
+    "cloudflare": ("cf-browser-verification", "challenge-platform", "just a moment", "checking your browser", "__cf_chl", "attention required", "one more step"),
+    "turnstile": ("challenges.cloudflare.com/turnstile", "cf-turnstile"),
+    "recaptcha": ("g-recaptcha", "recaptcha/api", "www.google.com/recaptcha", "recaptcha-box", "recaptcha_challenge"),
+    "hcaptcha": ("h-captcha", "hcaptcha.com", "challenge-container"),
+    "akamai": ("ak_bmsc", "akamai.com/us/en/"),
+    "datadome": ("datadome", "geo.captcha-delivery"),
+    "generic": ("verify you are human", "are you a robot", "unusual traffic from your computer network", "enable javascript and cookies to continue"),
+}
+
+_HTTP_ERROR_TITLE: tuple[str, ...] = ("403", "404", "410", "429", "forbidden", "not found", "access denied", "rate limit", "blocked", "too many requests")
+
+def _page_title(html: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    return match.group(1).strip().lower() if match else ""
+
+def _is_challenge_html(html: str) -> str | None:
+    """Return a block/challenge type string if html looks like an anti-bot interstitial or
+    an HTTP error page, else None. Substantive pages (>_CHALLENGE_MAX_LEN) are never flagged."""
+    if not html or len(html) > _CHALLENGE_MAX_LEN:
+        return None
+    lowered = html.lower()
+    for kind, needles in _CHALLENGE_PATTERNS.items():
+        for needle in needles:
+            if needle in lowered:
+                return kind
+    title = _page_title(html)
+    for needle in _HTTP_ERROR_TITLE:
+        if needle in title:
+            return "http-error"
+    return None
+
+_rate_lock: asyncio.Lock | None = None
+_last_request: dict[str, float] = {}
+
+async def _throttle(domain: str, cooldown: float) -> None:
+    """Minimum interval between requests to the same domain, to flatten cadence signals."""
+    if cooldown <= 0:
+        return
+    global _rate_lock
+    if _rate_lock is None:
+        _rate_lock = asyncio.Lock()
+    loop = asyncio.get_running_loop()
+    async with _rate_lock:
+        now = loop.time()
+        target = (_last_request.get(domain) or 0.0) + cooldown
+        wait = target - now
+        _last_request[domain] = max(target, now)
+    if wait > 0:
+        await asyncio.sleep(wait)
 
 def _extract_tables(soup: BeautifulSoup) -> list[TableData]:
     tables: list[TableData] = []
@@ -213,68 +262,71 @@ def _format_fetch_response(response: FetchResponse) -> str:
 
 
 
-async def _fetch_with_curl_cffi(url: str, config: FetchConfig) -> tuple[str, int, str]:
+async def _fetch_with_curl_cffi(url: str, config: FetchConfig, language: str = "auto") -> tuple[str, int, str]:
     if not CURL_CFFI_AVAILABLE:
         raise ImportError("curl_cffi not available")
 
+    accept_lang = "*" if language == "auto" else f"{language},{language}-*;q=0.9,*;q=0.5"
     async with AsyncSession(impersonate=random.choice(CHROME_IMPERSONATIONS)) as s:
         response = await s.get(
             url,
             timeout=config.timeout,
-            follow_redirects=True,
+            allow_redirects=True,
+            headers={"Accept-Language": accept_lang},
         )
-    
+
         return response.text, response.status_code, response.headers.get("content-type", "")
 
-async def _fetch_with_nodriver(url: str, config: FetchConfig) -> tuple[str, int, str]:
-    if not NODRIVER_AVAILABLE:
-        raise ImportError("nodriver not available")
+async def _fetch_with_obscura(url: str, config: FetchConfig) -> tuple[str, int, str]:
+    """Fetch via the Obscura stealth browser (one-shot `obscura fetch`), returning rendered HTML."""
+    if not OBSCURA_AVAILABLE:
+        raise ImportError("obscura binary not available")
 
-    semaphore = _get_browser_semaphore()
-    
-    async with semaphore:
-        browser = None
-        try:
-            browser = await uc.start(headless=True)
-            tab = await browser.get(url)
-            
-            await tab.wait_for("dom_content_loaded", timeout=config.timeout)
-            
-            html_content = await tab.get_content()
-            
-            try:
-                status = await tab.evaluate("window.statusCode || 200")
-                if not status or status == 0:
-                    status = 200
-            except Exception:
-                status = 200
-                
-            return html_content, int(status), "text/html"
-        finally:
-            if browser:
-                try:
-                    await browser.stop()
-                except Exception:
-                    pass
+    args = [OBSCURA_BINARY, "fetch", url, "--dump", "html"]
+    if config.obscura_stealth:
+        args.append("--stealth")
+    args += ["--timeout", str(int(config.obscura_timeout))]
+    if config.obscura_proxy:
+        args += ["--proxy", config.obscura_proxy]
 
-async def _fetch_with_httpx_fallback(url: str, config: FetchConfig) -> tuple[str, int, str]:
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=config.obscura_timeout + 5)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise FetchTimeoutError(f"Obscura timed out fetching {url}")
+    if proc.returncode != 0:
+        tail = stderr.decode("utf-8", errors="replace")[:300]
+        raise RuntimeError(f"obscura exited {proc.returncode}: {tail}")
+    html = stdout.decode("utf-8", errors="replace")
+    if not html.strip():
+        raise RuntimeError("obscura returned empty output")
+    return html, 200, "text/html"
+
+
+async def _fetch_with_httpx_fallback(url: str, config: FetchConfig, language: str = "auto") -> tuple[str, int, str]:
     ua = random.choice(USER_AGENTS)
+    accept_lang = "*" if language == "auto" else f"{language},{language}-*;q=0.9,*;q=0.5"
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": accept_lang,
         "Accept-Encoding": "gzip, deflate, br",
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
     }
-    
+
     async with httpx.AsyncClient(timeout=config.timeout, follow_redirects=True) as client:
         response = await client.get(url, headers=headers)
         return response.text, response.status_code, response.headers.get("content-type", "")
 
 
-async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> FetchResponse:
+async def _build_fetch_response(request: FetchRequest, config: FetchConfig, language: str = "auto") -> FetchResponse:
     """Core fetch logic. Returns a FetchResponse. Called by both fetch_page() and _fetch_page_structured()."""
     url_str = str(request.url)
     is_valid, reason = validate_url(url_str)
@@ -287,6 +339,8 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> F
             f"Invalid URL '{url_str}'. Must include http:// or https:// and a valid domain."
         )
 
+    await _throttle(parsed.netloc.lower(), config.rate_limit_cooldown)
+
     token_budget = request.max_tokens if request.max_tokens else config.token_budget
     html_content = None
     status_code = 200
@@ -296,31 +350,31 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> F
     if CURL_CFFI_AVAILABLE:
         try:
             logger.info("Attempting fetch with curl_cffi: %s", url_str)
-            html_content, status_code, content_type = await _fetch_with_curl_cffi(url_str, config)
+            html_content, status_code, content_type = await _fetch_with_curl_cffi(url_str, config, language=language)
             fetch_method = "curl_cffi"
-            if _should_discard_status(status_code):
-                logger.warning("curl_cffi got status %d for %s, discarding", status_code, url_str)
+            if _should_discard_status(status_code) or _is_challenge_html(html_content):
+                logger.warning("curl_cffi got status %d or challenge for %s, discarding", status_code, url_str)
                 html_content = None
         except Exception as exc:
             logger.warning("curl_cffi failed for %s: %s", url_str, exc)
             html_content = None
 
-    if html_content is None and NODRIVER_AVAILABLE:
+    if html_content is None and OBSCURA_AVAILABLE and config.obscura_enabled:
         try:
-            logger.info("Attempting fetch with nodriver: %s", url_str)
-            html_content, status_code, content_type = await _fetch_with_nodriver(url_str, config)
-            fetch_method = "nodriver"
+            logger.info("Attempting fetch with obscura: %s", url_str)
+            html_content, status_code, content_type = await _fetch_with_obscura(url_str, config)
+            fetch_method = "obscura"
             if _should_discard_status(status_code):
-                logger.warning("nodriver got status %d for %s, discarding", status_code, url_str)
+                logger.warning("obscura got status %d for %s, discarding", status_code, url_str)
                 html_content = None
         except Exception as exc:
-            logger.warning("nodriver failed for %s: %s", url_str, exc)
+            logger.warning("obscura failed for %s: %s", url_str, exc)
             html_content = None
 
     if html_content is None:
         logger.info("Attempting fetch with httpx fallback: %s", url_str)
         try:
-            html_content, status_code, content_type = await _fetch_with_httpx_fallback(url_str, config)
+            html_content, status_code, content_type = await _fetch_with_httpx_fallback(url_str, config, language=language)
             fetch_method = "httpx"
         except Exception as exc:
             if isinstance(exc, httpx.TimeoutException):
@@ -334,6 +388,12 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> F
         raise FetchBlockedError(f"Blocked by {url_str} (HTTP {status_code})")
     if status_code >= 400:
         raise FetchHTTPError(f"HTTP {status_code} from {url_str}", status_code=status_code)
+
+    challenge = _is_challenge_html(html_content or "")
+    if challenge:
+        raise FetchBlockedError(
+            f"Detected '{challenge}' anti-bot challenge on {url_str} (after {fetch_method}); content withheld"
+        )
 
     if "text/html" not in content_type and "application/xhtml" not in content_type:
         raw_text = html_content
@@ -400,6 +460,9 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> F
         structured_data=structured_data,
         links=links,
         was_truncated=was_truncated or bool(readability_result["was_truncated"]),
+        content_language=str(readability_result.get("content_language", "")),
+        author=str(readability_result.get("author", "")),
+        published_date=str(readability_result.get("published_date", "")),
         markdown="",
     )
     fetch_response.markdown = _format_fetch_response(fetch_response)
@@ -417,8 +480,8 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig) -> F
     return fetch_response
 
 
-async def fetch_page(url: str, max_tokens: int | None = None) -> str:
-    logger.info("fetch_page called: url=%r, max_tokens=%r", url, max_tokens)
+async def fetch_page(url: str, max_tokens: int | None = None, language: str = "auto") -> str:
+    logger.info("fetch_page called: url=%r, max_tokens=%r, language=%r", url, max_tokens, language)
     config = get_fetch_config()
     token_budget = max_tokens or config.token_budget
     try:
@@ -427,14 +490,14 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
         return f"## Invalid URL\n{exc}"
     try:
         response = await asyncio.wait_for(
-            _build_fetch_response(request, config),
-            timeout=30.0,
+            _build_fetch_response(request, config, language=language),
+            timeout=config.fetch_global_timeout,
         )
         return cap_response(response.markdown)
     except asyncio.TimeoutError:
         return cap_response(format_tool_error(
             error_code="FETCH_GLOBAL_TIMEOUT",
-            message=f"Total fetch time for {url} exceeded 30 seconds across all fallback methods.",
+            message=f"Total fetch time for {url} exceeded {config.fetch_global_timeout}s across all fallback methods.",
             retry_guidance="The page is too slow to fetch. Try a different URL or search for cached content.",
         ))
     except MCPToolError as exc:
@@ -448,7 +511,7 @@ async def fetch_page(url: str, max_tokens: int | None = None) -> str:
         return f"## Fetch Error\n{exc}"
 
 
-async def _fetch_page_structured(url: str, max_tokens: int | None = None) -> FetchResponse:
+async def _fetch_page_structured(url: str, max_tokens: int | None = None, language: str = "auto") -> FetchResponse:
     """Internal-only. Returns FetchResponse directly. Used by get_contents to skip markdown parsing.
     Raises MCPToolError on failure.
     """
@@ -459,6 +522,6 @@ async def _fetch_page_structured(url: str, max_tokens: int | None = None) -> Fet
     except Exception as exc:
         raise FetchURLError(f"Invalid URL '{url}': {exc}") from exc
     try:
-        return await _build_fetch_response(request, config)
+        return await _build_fetch_response(request, config, language=language)
     except ValueError as exc:
         raise FetchURLError(str(exc)) from exc

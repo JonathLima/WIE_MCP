@@ -335,13 +335,53 @@ def extract_readability_content(
     html: str,
     source_url: str | None = None,
     max_length: int = 10000,
-) -> dict[str, str | list]:
+) -> dict[str, str | list | bool]:
+    try:
+        import trafilatura
+        from trafilatura import extract_metadata as traf_extract_metadata
+
+        # --- trafilatura primary extraction ---
+        traf_content = trafilatura.extract(
+            html,
+            output_format="markdown",
+            include_comments=False,
+            favor_recall=True,
+            url=source_url,
+        )
+
+        # Metadata (title, author, date)
+        meta = traf_extract_metadata(html, default_url=source_url or "")
+        traf_title: str = (meta.title or "") if meta else ""
+        traf_author: str = (meta.author or "") if meta else ""
+        traf_date: str = (meta.date or "") if meta else ""
+
+        # Content-language: read from <html lang="..."> via BeautifulSoup
+        traf_lang = ""
+        try:
+            soup_lang = BeautifulSoup(html, "html.parser")
+            html_tag = soup_lang.find("html")
+            if html_tag and isinstance(html_tag, Tag):
+                lang_attr = html_tag.get("lang", "")
+                if lang_attr:
+                    traf_lang = str(lang_attr).split("-")[0].lower()
+        except Exception:
+            pass
+
+    except ImportError:
+        traf_content = None
+        traf_title = ""
+        traf_author = ""
+        traf_date = ""
+        traf_lang = ""
+
+    # --- Soup fallback pipeline (also used for headings/description/tables) ---
     soup = BeautifulSoup(html, "html.parser")
 
-    title = ""
-    title_tag = soup.find("title")
-    if title_tag:
-        title = title_tag.get_text(strip=True)
+    title = traf_title
+    if not title:
+        title_tag = soup.find("title")
+        if title_tag:
+            title = title_tag.get_text(strip=True)
 
     description = ""
     meta_desc = soup.find("meta", attrs={"name": "description"})
@@ -355,12 +395,16 @@ def extract_readability_content(
             if text:
                 headings.append({"level": tag_name, "text": text})
 
-    content_root = _find_content_root(soup)
-    if content_root:
-        _clean_element(content_root, source_url)
-        content = _element_to_markdown(content_root)
+    if traf_content:
+        content = traf_content
     else:
-        content = soup.get_text(separator="\n", strip=True)
+        # soup-based extraction fallback
+        content_root = _find_content_root(soup)
+        if content_root:
+            _clean_element(content_root, source_url)
+            content = _element_to_markdown(content_root)
+        else:
+            content = soup.get_text(separator="\n", strip=True)
 
     content = re.sub(r"\n{3,}", "\n\n", content)
     content = content.strip()
@@ -380,4 +424,7 @@ def extract_readability_content(
         "content": content,
         "headings": headings,
         "was_truncated": was_truncated,
+        "content_language": traf_lang,
+        "author": traf_author,
+        "published_date": traf_date,
     }

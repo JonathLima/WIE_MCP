@@ -12,10 +12,12 @@ from src.utils.truncation import cap_response
 logger = logging.getLogger(__name__)
 
 async def _fetch_and_extract(url: str, query: str, max_tokens: int) -> str:
-    from src.tools.fetch_page import fetch_page
+    from src.tools.fetch_page import _fetch_page_structured
+    from src.errors import MCPToolError
     try:
-        content = await fetch_page(url, max_tokens=max_tokens)
-        lines = [line for line in content.split("\n") if not line.startswith("#") and line.strip()]
+        resp = await _fetch_page_structured(url, max_tokens=max_tokens)
+        text = resp.markdown or resp.content
+        lines = [line for line in text.split("\n") if not line.startswith("#") and line.strip()]
         text = "\n".join(lines)
         highlights = extract_highlights(text, query, num_sentences=5)
         if highlights:

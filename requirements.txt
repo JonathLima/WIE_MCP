@@ -5,14 +5,11 @@ pydantic-settings>=2.3.0,<3.0.0
 uvicorn>=0.30.0,<1.0.0
 starlette>=0.37.0,<1.0.0
 beautifulsoup4>=4.12.0,<5.0.0
-readability-lxml>=0.8.2,<1.0.0
+trafilatura>=2.0,<3.0
 lxml>=5.0.0
 
 # Stealth HTTP clients for bypassing bot detection
 curl-cffi>=0.8.0,<1.0.0
-
-# Stealth browser automation (fallback for tough sites)
-nodriver>=0.0.50,<1.0.0
 
 # Local LLM-based reranking for search quality
 flashrank>=0.2.0,<1.0.0

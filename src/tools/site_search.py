@@ -10,6 +10,7 @@ async def site_search(
     site: str,
     time_range: str | None = None,
     limit: int = 5,
+    language: str = "auto",
 ) -> str:
     site_query = f"site:{site} {query}"
     logger.info("site_search called: site=%s, query=%s", site, query)
@@ -18,4 +19,5 @@ async def site_search(
         query=site_query,
         time_range=time_range,
         limit=limit,
+        language=language,
     )
