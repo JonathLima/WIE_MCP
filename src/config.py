@@ -185,3 +185,6 @@ def get_fetch_config() -> FetchConfig:
 @lru_cache(maxsize=1)
 def get_server_config() -> ServerConfig:
     return ServerConfig()
+
+from src.browser.config import BrowserConfig, get_browser_config
+
