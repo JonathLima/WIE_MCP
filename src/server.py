@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 from mcp.types import ToolAnnotations
+
+from src.browser.engine import StealthBrowserEngine
+from src.browser.session import BrowserSession
+from src.browser.actions import BrowserActions
 
 from src.config import get_server_config
 from src.tools.web_search import web_search as do_web_search
@@ -129,6 +134,91 @@ async def get_contents(
 @mcp.tool(annotations=ToolAnnotations(title="Answer", readOnlyHint=True))
 async def answer(query: str, urls: list[str]) -> str:
     return await do_answer(query=query, urls=urls)
+
+_active_session: BrowserSession | None = None
+_active_actions: BrowserActions | None = None
+_session_lock = asyncio.Lock()
+
+
+async def get_active_browser_actions() -> BrowserActions:
+    global _active_session, _active_actions
+    async with _session_lock:
+        if _active_actions is None:
+            engine = await StealthBrowserEngine.get_instance()
+            if not engine.is_available():
+                raise RuntimeError("Stealth browser engine is not available or disabled.")
+            if not engine._is_started:
+                await engine.start()
+            page = await engine._context.new_page()
+            _active_session = BrowserSession(page)
+            _active_actions = BrowserActions(_active_session)
+        return _active_actions
+
+
+async def reset_active_browser_actions() -> None:
+    global _active_session, _active_actions
+    async with _session_lock:
+        if _active_actions:
+            try:
+                await _active_actions.close()
+            except Exception:
+                pass
+            _active_session = None
+            _active_actions = None
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Navigate", readOnlyHint=False))
+async def browser_navigate(url: str, wait_until: str = "load", timeout_seconds: float = 30.0) -> str:
+    """Navigate the stealth browser to a URL, bypassing anti-bot challenges and rendering dynamic JavaScript."""
+    actions = await get_active_browser_actions()
+    return await actions.navigate(url=url, wait_until=wait_until, timeout_seconds=timeout_seconds)
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Snapshot", readOnlyHint=True))
+async def browser_snapshot(interactive_only: bool = True) -> str:
+    """Capture an interactive snapshot of the current page DOM and accessibility tree with element IDs and selectors."""
+    actions = await get_active_browser_actions()
+    return await actions.snapshot(interactive_only=interactive_only)
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Click", readOnlyHint=False))
+async def browser_click(selector: str | None = None, text: str | None = None) -> str:
+    """Click an element matching a CSS selector or visible text using humanized cursor movement."""
+    actions = await get_active_browser_actions()
+    return await actions.click(selector=selector, text=text)
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Type", readOnlyHint=False))
+async def browser_type(selector: str, text: str, press_enter: bool = False, clear_first: bool = True) -> str:
+    """Type text into an input or textarea element with natural human typing intervals."""
+    actions = await get_active_browser_actions()
+    return await actions.type_text(selector=selector, text=text, press_enter=press_enter, clear_first=clear_first)
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Take Screenshot", readOnlyHint=True))
+async def browser_take_screenshot() -> Image:
+    """Take a screenshot of the current page viewport."""
+    actions = await get_active_browser_actions()
+    png_bytes = await actions.take_screenshot()
+    return Image(data=png_bytes, format="png")
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Evaluate", readOnlyHint=True))
+async def browser_evaluate(expression: str) -> str:
+    """Evaluate a read-only JavaScript expression in the context of the active page."""
+    actions = await get_active_browser_actions()
+    return await actions.evaluate(expression=expression)
+
+
+@mcp.tool(annotations=ToolAnnotations(title="Browser Close", readOnlyHint=False))
+async def browser_close() -> str:
+    """Close the active interactive browser session."""
+    global _active_actions
+    if _active_actions is None:
+        return "No active browser session to close."
+    await reset_active_browser_actions()
+    return "Browser session closed successfully."
+
 
 def run_http() -> None:
     """Run server in Streamable HTTP mode (for remote clients - Zed compatible)."""
