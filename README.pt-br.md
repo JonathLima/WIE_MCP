@@ -21,9 +21,17 @@ Agente de IA (Claude, Cursor, Zed...)
    ├── web_search()
    ├── web_search_advanced()
    ├── site_search()
-   ├── fetch_page()
+   ├── fetch_page()             ← com fallback stealth do AIHawk
    ├── get_contents()
-   └── answer()
+   ├── answer()
+   └── browser_*()              ← navegador stealth interativo (AIHawk)
+       ├── browser_navigate()
+       ├── browser_snapshot()
+       ├── browser_click()
+       ├── browser_type()
+       ├── browser_take_screenshot()
+       ├── browser_evaluate()
+       └── browser_close()
         │
         ▼
    SearXNG (local)              ← porta 8080
@@ -249,7 +257,7 @@ site_search(
 
 ### `fetch_page` — extrair conteúdo de uma URL
 
-Extrai o conteúdo em texto limpo de uma página web. Tenta `curl-cffi` (anti-bot), `obscura` (browser stealth em Rust, `--stealth`) e `httpx` em fallback.
+Extrai o conteúdo em texto limpo de uma página web. Tenta `curl-cffi` (anti-bot com impersonação de TLS) primeiro. Se detectar desafios anti-bot (Cloudflare Turnstile, Datadome, Akamai) ou páginas dinâmicas (SPAs JavaScript), aciona automaticamente o **`invisible-playwright` do AIHawk** (Firefox com patches em C++, anti-detecção autêntica e emulação humana). Em seguida, faz fallback para `obscura` e `httpx`.
 
 ```python
 fetch_page(
@@ -294,6 +302,64 @@ answer(
 
 ---
 
+## Ferramentas de Navegação Stealth Interativa (Motor AIHawk)
+
+O WIE integra o motor de navegação anti-detecção do [AIHawk](https://github.com/feder-cr/AIHawk) baseado em `invisible-playwright`. Isso permite que agentes de IA naveguem de forma autônoma e interativa por páginas web protegidas sem serem bloqueados por captchas.
+
+### `browser_navigate` — navegar para uma URL
+```python
+browser_navigate(
+    url="https://example.com/login",
+    wait_until="load",           # "load" | "domcontentloaded" | "networkidle"
+    timeout_seconds=30.0,
+)
+```
+
+### `browser_snapshot` — inspecionar elementos interativos
+Inspeciona a árvore de acessibilidade e o DOM da página atual, retornando uma lista numerada e compacta de elementos acionáveis (botões, campos de texto, links) com seletores CSS para o agente interagir.
+```python
+browser_snapshot(interactive_only=True)
+```
+
+### `browser_click` — clique humanizado
+Clica em um elemento por seletor CSS ou texto visível utilizando trajetórias em curvas de Bézier e intervalos temporais humanos.
+```python
+browser_click(selector="button#login-btn")
+# ou
+browser_click(text="Entrar")
+```
+
+### `browser_type` — digitação com cadência humana
+Digita em campos de texto com intervalos realistas entre teclas.
+```python
+browser_type(
+    selector="input#username",
+    text="meu_usuario",
+    press_enter=False,
+    clear_first=True,
+)
+```
+
+### `browser_take_screenshot` — captura de tela
+Tira uma captura PNG da janela de visualização atual, retornada diretamente no formato nativo `Image` do MCP para modelos multimodais de visão.
+```python
+browser_take_screenshot()
+```
+
+### `browser_evaluate` — executar JavaScript
+Executa expressões JavaScript em modo somente leitura no contexto da página e retorna o resultado em JSON.
+```python
+browser_evaluate("document.title")
+```
+
+### `browser_close` — encerrar sessão ativa
+Fecha a sessão ativa do navegador e libera os recursos do sistema.
+```python
+browser_close()
+```
+
+---
+
 ## Tiers de autoridade de fonte
 
 Todos os resultados são classificados em 4 tiers de confiabilidade:
@@ -324,6 +390,11 @@ Todas as variáveis são configuradas no arquivo `.env`:
 | `FETCH_TIMEOUT_SECONDS` | `15` | Timeout de fetch de página em segundos |
 | `FETCH_MAX_CONTENT_LENGTH` | `10000` | Máximo de caracteres extraídos por página |
 | `FETCH_TOKEN_BUDGET` | `8000` | Orçamento de tokens por página |
+| `BROWSER_ENABLED` | `true` | Habilita o motor de navegação stealth |
+| `BROWSER_HEADLESS` | `true` | Executa o navegador stealth em modo headless |
+| `BROWSER_TIMEOUT_SECONDS` | `30` | Timeout padrão para navegação |
+| `BROWSER_PROXY` | *(vazio)* | Proxy opcional para saída do navegador |
+| `BROWSER_PROFILE_DIR` | *(vazio)* | Diretório de perfil persistente opcional para logins |
 | `MCP_SERVER_HOST` | `0.0.0.0` | Host que o servidor MCP escuta |
 | `MCP_SERVER_PORT` | `8000` | Porta do servidor MCP |
 | `API_KEY` | *(vazio)* | Chave de API opcional para proteger o servidor |
@@ -335,16 +406,22 @@ Todas as variáveis são configuradas no arquivo `.env`:
 ```
 WIE_MCP/
 ├── src/
-│   ├── server.py              # Servidor MCP — registra as 6 ferramentas
+│   ├── server.py              # Servidor MCP — registra as 13 ferramentas
 │   ├── config.py              # Configurações via Pydantic Settings + .env
 │   ├── constants.py           # Tiers de domínio, tipos de busca, categorias
 │   ├── models.py              # Schemas Pydantic (request/response)
 │   ├── errors.py              # Classes de erro tipadas
 │   ├── searxng_client.py      # Cliente HTTP para o SearXNG
+│   ├── browser/               # Módulo do navegador stealth (AIHawk)
+│   │   ├── config.py          # BrowserConfig (Pydantic settings)
+│   │   ├── engine.py          # StealthBrowserEngine (ciclo de vida InvisiblePlaywright)
+│   │   ├── session.py         # BrowserSession (wrapper de aba/página)
+│   │   ├── actions.py         # BrowserActions (cliques humanizados, digitação, navegação)
+│   │   └── snapshot.py        # Parser de acessibilidade interativa do DOM
 │   ├── tools/
 │   │   ├── web_search.py          # Ferramenta web_search
 │   │   ├── web_search_advanced.py # Ferramenta web_search_advanced
-│   │   ├── fetch_page.py          # Ferramenta fetch_page
+│   │   ├── fetch_page.py          # Ferramenta fetch_page (com fallback stealth)
 │   │   ├── get_contents.py        # Ferramenta get_contents
 │   │   ├── site_search.py         # Ferramenta site_search
 │   │   └── answer.py              # Ferramenta answer
