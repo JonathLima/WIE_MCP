@@ -9,15 +9,12 @@ from src.browser.config import BrowserConfig, get_browser_config
 logger = logging.getLogger(__name__)
 
 try:
-    from invisible_playwright.async_api import async_playwright
+    from invisible_playwright.async_api import InvisiblePlaywright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
-    try:
-        from playwright.async_api import async_playwright
-        PLAYWRIGHT_AVAILABLE = True
-    except ImportError:
-        PLAYWRIGHT_AVAILABLE = False
-        logger.warning("invisible-playwright not installed; browser engine unavailable")
+    InvisiblePlaywright = None
+    PLAYWRIGHT_AVAILABLE = False
+    logger.warning("invisible-playwright not installed; browser engine unavailable")
 
 
 class StealthBrowserEngine:
@@ -26,7 +23,7 @@ class StealthBrowserEngine:
 
     def __init__(self, config: Optional[BrowserConfig] = None) -> None:
         self.config = config or get_browser_config()
-        self._playwright = None
+        self._ipw = None
         self._browser = None
         self._context = None
         self._is_started = False
@@ -40,7 +37,13 @@ class StealthBrowserEngine:
         return cls._instance
 
     def is_available(self) -> bool:
-        return PLAYWRIGHT_AVAILABLE and self.config.enabled
+        if not PLAYWRIGHT_AVAILABLE or not self.config.enabled:
+            return False
+        try:
+            import invisible_playwright._engine as _eng
+            return _eng.resolve_executable(None) is not None
+        except Exception:
+            return False
 
     async def start(self) -> None:
         if self._is_started or not self.is_available():
@@ -49,20 +52,28 @@ class StealthBrowserEngine:
         async with self._lock:
             if self._is_started:
                 return
-            logger.info("Initializing stealth browser engine (invisible-playwright Firefox)...")
+            logger.info("Initializing stealth browser engine (InvisiblePlaywright Firefox)...")
             try:
-                self._playwright = await async_playwright().start()
-                launch_args = {}
+                launch_kwargs = {
+                    "headless": self.config.headless,
+                }
                 if self.config.proxy:
-                    launch_args["proxy"] = {"server": self.config.proxy}
+                    launch_kwargs["proxy"] = {"server": self.config.proxy}
+                if self.config.profile_dir:
+                    launch_kwargs["profile_dir"] = self.config.profile_dir
 
-                self._browser = await self._playwright.firefox.launch(
-                    headless=self.config.headless,
-                    **launch_args,
-                )
-                self._context = await self._browser.new_context(
-                    viewport={"width": self.config.viewport_width, "height": self.config.viewport_height}
-                )
+                self._ipw = InvisiblePlaywright(**launch_kwargs)
+                target = await self._ipw.__aenter__()
+
+                if hasattr(target, "new_context"):
+                    self._browser = target
+                    self._context = await self._browser.new_context(
+                        viewport={"width": self.config.viewport_width, "height": self.config.viewport_height}
+                    )
+                else:
+                    self._browser = None
+                    self._context = target
+
                 self._is_started = True
                 logger.info("Stealth browser engine ready.")
             except Exception as exc:
@@ -72,27 +83,22 @@ class StealthBrowserEngine:
 
     async def stop(self) -> None:
         async with self._lock:
-            if self._context:
+            if self._context and self._browser:
                 try:
                     await self._context.close()
                 except Exception:
                     pass
                 self._context = None
 
-            if self._browser:
+            if self._ipw:
                 try:
-                    await self._browser.close()
+                    await self._ipw.__aexit__(None, None, None)
                 except Exception:
                     pass
-                self._browser = None
+                self._ipw = None
 
-            if self._playwright:
-                try:
-                    await self._playwright.stop()
-                except Exception:
-                    pass
-                self._playwright = None
-
+            self._browser = None
+            self._context = None
             self._is_started = False
             logger.info("Stealth browser engine stopped.")
 

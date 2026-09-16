@@ -50,6 +50,13 @@ except ImportError:
 OBSCURA_BINARY = os.environ.get("OBSCURA_BINARY", "/usr/local/bin/obscura")
 OBSCURA_AVAILABLE = os.path.exists(OBSCURA_BINARY) or bool(shutil.which("obscura"))
 
+try:
+    from src.browser.engine import StealthBrowserEngine
+    STEALTH_BROWSER_AVAILABLE = True
+except ImportError:
+    STEALTH_BROWSER_AVAILABLE = False
+
+
 USER_AGENTS: list[str] = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -308,6 +315,16 @@ async def _fetch_with_obscura(url: str, config: FetchConfig) -> tuple[str, int, 
     return html, 200, "text/html"
 
 
+async def _fetch_with_stealth_browser(url: str, config: FetchConfig) -> tuple[str, int, str]:
+    from src.browser.engine import StealthBrowserEngine
+
+    engine = await StealthBrowserEngine.get_instance()
+    if not engine.is_available():
+        raise RuntimeError("Stealth browser engine is not available")
+    html, title = await engine.fetch_page_html(url, timeout_seconds=config.timeout)
+    return html, 200, "text/html"
+
+
 async def _fetch_with_httpx_fallback(url: str, config: FetchConfig, language: str = "auto") -> tuple[str, int, str]:
     ua = random.choice(USER_AGENTS)
     accept_lang = "*" if language == "auto" else f"{language},{language}-*;q=0.9,*;q=0.5"
@@ -369,6 +386,20 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig, lang
                 html_content = None
         except Exception as exc:
             logger.warning("obscura failed for %s: %s", url_str, exc)
+            html_content = None
+
+    if html_content is None and STEALTH_BROWSER_AVAILABLE:
+        try:
+            engine = await StealthBrowserEngine.get_instance()
+            if engine.is_available():
+                logger.info("Attempting fetch with stealth browser (invisible-playwright): %s", url_str)
+                html_content, status_code, content_type = await _fetch_with_stealth_browser(url_str, config)
+                fetch_method = "stealth_browser"
+                if _should_discard_status(status_code) or _is_challenge_html(html_content):
+                    logger.warning("stealth_browser got status %d or challenge for %s, discarding", status_code, url_str)
+                    html_content = None
+        except Exception as exc:
+            logger.warning("stealth_browser failed for %s: %s", url_str, exc)
             html_content = None
 
     if html_content is None:

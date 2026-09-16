@@ -3,6 +3,11 @@ from unittest.mock import patch, AsyncMock
 from src.tools.fetch_page import fetch_page
 
 
+@pytest.fixture(autouse=True)
+def disable_stealth_browser_in_mock_tests(monkeypatch):
+    monkeypatch.setattr("src.tools.fetch_page.STEALTH_BROWSER_AVAILABLE", False)
+
+
 class TestFetchPageValidation:
     """URL validation before any fetch attempt."""
 
