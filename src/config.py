@@ -36,7 +36,7 @@ class SearxngConfig(BaseSettings):
         description="SearxNG internal URL",
     )
     engines: str = Field(
-        default="google,bing,duckduckgo,brave,qwant,mojeek,sepiasearch,mwmbl,wikipedia,wikidata,google news,bing news,duckduckgo news,reuters,arxiv,semantic scholar,crossref,openalex,europepmc,lemmy posts,lemmy comments,mastodon hashtags,hackernews,github",
+        default="google,bing,duckduckgo,brave,qwant,wikipedia,wikidata,google news,bing news,duckduckgo news,reuters,arxiv,hackernews,github",
         validation_alias=AliasChoices("SEARXNG_ENGINES", "engines"),
         description="Comma-separated list of enabled SearxNG engines",
     )
@@ -58,7 +58,7 @@ class SearxngConfig(BaseSettings):
         description="Max results per query",
     )
     timeout: float = Field(
-        default=10.0,
+        default=25.0,
         gt=0,
         validation_alias=AliasChoices("SEARCH_TIMEOUT_SECONDS", "timeout"),
         description="HTTP timeout in seconds",
@@ -89,7 +89,7 @@ class FetchConfig(BaseSettings):
     )
 
     timeout: float = Field(
-        default=15.0,
+        default=30.0,
         gt=0,
         validation_alias=AliasChoices("FETCH_TIMEOUT_SECONDS", "timeout"),
         description="HTTP timeout in seconds",
@@ -169,7 +169,7 @@ class ServerConfig(BaseSettings):
         description="Optional API key for MCP server access control",
     )
     default_search_type: str = Field(
-        default="auto",
+        default="deep",
         validation_alias=AliasChoices("SEARCH_DEFAULT_TYPE", "default_search_type"),
         description="Default search type: instant, fast, auto, deep_lite, deep, deep_reasoning",
     )

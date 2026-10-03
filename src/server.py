@@ -74,7 +74,7 @@ async def fetch_page(url: str, max_tokens: int | None = None, language: str = "a
 @mcp.tool(annotations=ToolAnnotations(title="Web Search Advanced", readOnlyHint=True))
 async def web_search_advanced(
     query: str,
-    search_type: str = "auto",
+    search_type: str = "deep",
     num_results: int = 10,
     category: str | None = None,
     include_domains: list[str] | None = None,
@@ -143,6 +143,11 @@ _session_lock = asyncio.Lock()
 async def get_active_browser_actions() -> BrowserActions:
     global _active_session, _active_actions
     async with _session_lock:
+        if _active_actions is not None and _active_session is not None:
+            if hasattr(_active_session.page, "is_closed") and _active_session.page.is_closed():
+                _active_actions = None
+                _active_session = None
+
         if _active_actions is None:
             engine = await StealthBrowserEngine.get_instance()
             if not engine.is_available():

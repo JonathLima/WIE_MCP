@@ -102,6 +102,59 @@ class StealthBrowserEngine:
             self._is_started = False
             logger.info("Stealth browser engine stopped.")
 
+    @staticmethod
+    async def handle_turnstile_challenge(page, max_wait_seconds: float = 8.0) -> bool:
+        """Detect and resolve Cloudflare Turnstile or anti-bot challenge on page.
+        Returns True if resolved (or no challenge), False if still challenged after timeout.
+        """
+        loop = asyncio.get_running_loop()
+        start_time = loop.time()
+        while loop.time() - start_time < max_wait_seconds:
+            try:
+                title = (await page.title()).lower()
+                content = (await page.content()).lower()
+            except Exception:
+                break
+
+            is_challenged = any(needle in title or needle in content for needle in (
+                "just a moment",
+                "checking your browser",
+                "attention required",
+                "verify you are human",
+                "prove your humanity",
+                "cf-turnstile",
+                "challenges.cloudflare.com",
+                "challenge-platform",
+            ))
+
+            if not is_challenged:
+                return True
+
+            try:
+                frames = page.frames
+                clicked = False
+                for frame in frames:
+                    if any(k in frame.url for k in ("cloudflare", "turnstile", "challenges")):
+                        checkbox = await frame.query_selector("input[type='checkbox'], #challenge-stage, .ctp-checkbox-label, .checkbox")
+                        if checkbox:
+                            logger.info("Found Turnstile challenge checkbox in frame, clicking via humanized input...")
+                            await checkbox.click()
+                            clicked = True
+                            break
+                if not clicked:
+                    cb = await page.query_selector("iframe[src*='challenges.cloudflare.com'], iframe[src*='turnstile']")
+                    if cb:
+                        box = await cb.bounding_box()
+                        if box:
+                            logger.info("Clicking Turnstile iframe bounding box...")
+                            await page.mouse.click(box["x"] + 30, box["y"] + box["height"] / 2)
+            except Exception as exc:
+                logger.debug("Turnstile interact attempt exception: %s", exc)
+
+            await page.wait_for_timeout(1000)
+
+        return False
+
     async def fetch_page_html(
         self,
         url: str,
@@ -121,6 +174,8 @@ class StealthBrowserEngine:
             await page.goto(url, wait_until=wait_until, timeout=timeout)
             # Short stabilization pause for anti-bot interstitials and dynamic DOM hydration
             await page.wait_for_timeout(1500)
+            # Active Turnstile / Cloudflare challenge check & resolution
+            await self.handle_turnstile_challenge(page, max_wait_seconds=8.0)
             content = await page.content()
             title = await page.title()
             return content, title

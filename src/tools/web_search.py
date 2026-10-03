@@ -53,7 +53,7 @@ def _rerank_with_flashrank(query: str, results: list[SearchResult]) -> list[Sear
         rerank_request = RerankRequest(query=query, passages=passages)
         reranked = ranker.rerank(rerank_request)
         
-        id_to_result = {r.id: r for r in results}
+        id_to_result = {idx: r for idx, r in enumerate(results)}
         reranked_results = [id_to_result[r["id"]] for r in reranked if r["id"] in id_to_result]
         
         logger.info("FlashRank reranked %d results", len(results))

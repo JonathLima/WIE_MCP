@@ -28,11 +28,11 @@ engines:
   - name: qwant
     disabled: false
   - name: mojeek
-    disabled: false
+    disabled: true
   - name: sepiasearch
-    disabled: false
+    disabled: true
   - name: mwmbl
-    disabled: false
+    disabled: true
   - name: wikipedia
     disabled: false
   - name: wikidata
@@ -50,20 +50,20 @@ engines:
   - name: arxiv
     disabled: false
   - name: semantic scholar
-    disabled: false
+    disabled: true
   - name: crossref
-    disabled: false
+    disabled: true
   - name: openalex
-    disabled: false
+    disabled: true
   - name: europepmc
-    disabled: false
+    disabled: true
   # social / forums / code
   - name: lemmy posts
-    disabled: false
+    disabled: true
   - name: lemmy comments
-    disabled: false
+    disabled: true
   - name: mastodon hashtags
-    disabled: false
+    disabled: true
   - name: hackernews
     disabled: false
   - name: github

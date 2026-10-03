@@ -36,10 +36,13 @@ AI Agent (Claude, Cursor, Zed...)
         ▼
    SearXNG (local)              ← port 8080
    ├── google
-   ├── duckduckgo
    ├── bing
-   ├── wikipedia
-   └── startpage
+   ├── duckduckgo
+   ├── brave
+   ├── qwant
+   ├── github
+   ├── hackernews
+   └── arxiv
         │
         ▼
       Internet
@@ -165,11 +168,49 @@ pip install -r requirements.txt
 | VS Code + Cline | `.vscode/mcp.json` |
 | LM Studio | Settings → MCP Servers |
 
+### Forcing WIE as the Default Web Searcher in AI Coding CLIs
+
+To ensure agentic coding CLIs (**Claude Code**, **Antigravity CLI**, **Gemini CLI**, **Cursor**) automatically use WIE for all internet searches and scraping rather than falling back to built-in or generic search tools:
+
+#### 1. Claude Code (`claude`)
+Register WIE via HTTP:
+```bash
+claude mcp add --transport http WIE http://localhost:8000/mcp
+```
+To strictly disable Claude's native web tools and guarantee WIE usage:
+```bash
+claude --disallowed-tools WebSearch,WebFetch
+```
+Or enforce via `~/.claude/CLAUDE.md` (or `./CLAUDE.md`):
+```markdown
+## Web Research Protocol (MANDATORY)
+- ALWAYS use WIE MCP tools (`web_search`, `fetch_page`, `browser_navigate`) for web lookups and scraping.
+- For protected sites (Reddit, Cloudflare, SPAs), use `browser_navigate` and `browser_snapshot` to bypass challenges and render the full dynamic DOM.
+```
+
+#### 2. Antigravity CLI & Gemini CLI
+Add to `~/.gemini/config/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "WIE": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+Enforce mandatory behavior in `~/.gemini/config/GEMINI.md` or `./AGENTS.md`:
+```markdown
+## Web Search & Research Protocol (MANDATORY)
+- ALWAYS use WIE MCP (`web_search`, `fetch_page`, `browser_navigate`) for web searches and content retrieval.
+- For dynamic web apps or bot-protected sites (Reddit, Twitter, etc.), use the stealth browser tools (`browser_navigate`).
+```
+
 ---
 
 ## Available tools
 
-WIE exposes **6 MCP tools**:
+WIE exposes **13 MCP tools** (6 search & content extraction tools + 7 interactive stealth browser tools):
 
 ### `web_search` — general web search
 
@@ -194,7 +235,7 @@ Search with query expansion, domain filters, date filters, category targeting, a
 ```python
 web_search_advanced(
     query="impact of LLMs on software development",
-    search_type="deep",               # see table below
+    search_type="deep",               # see table below (default: "deep")
     num_results=15,                   # default: 10
     category="research_paper",        # see categories below
     include_domains=["arxiv.org"],    # only these domains
@@ -217,10 +258,10 @@ web_search_advanced(
 |------|-----------------|-----------|------------|----------|
 | `instant` | 1 | ❌ | ❌ | Ultra-fast, top 3 results |
 | `fast` | 1 | ❌ | ❌ | Quick, single-pass search |
-| `auto` | 1 | ✅ | ✅ | **Default** — best balance |
-| `deep_lite` | 3 | ✅ | ✅ | Moderate research |
-| `deep` | 5 | ✅ | ✅ | Thorough research |
-| `deep_reasoning` | 7 | ✅ | ✅ | Complex investigation |
+| `auto` | 1 | ✅ | ✅ | Single-pass with reranking |
+| `deep_lite` | 3 | ✅ | ✅ | Moderate multi-query research |
+| `deep` | 5 | ✅ | ✅ | **Default** — Thorough multi-query research |
+| `deep_reasoning` | 7 | ✅ | ✅ | Exhaustive multi-query investigation |
 
 **Categories (`category`):**
 
@@ -380,14 +421,14 @@ All variables are configured in the `.env` file:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SEARXNG_HOST` | `http://searxng:8080` | Internal SearXNG URL |
-| `SEARXNG_ENGINES` | `google,duckduckgo,bing,wikipedia,startpage` | Active engines (comma-separated) |
+| `SEARXNG_ENGINES` | `google,bing,duckduckgo,brave,qwant,github,hackernews,arxiv` | Active engines (comma-separated) |
 | `SEARXNG_DEFAULT_CATEGORY` | `general` | Default category when not specified |
 | `SEARXNG_SAFESEARCH` | `0` | Safe search level: `0`, `1`, or `2` |
 | `SEARXNG_SECRET` | *(required)* | SearXNG secret key — **change before use** |
-| `SEARCH_DEFAULT_TYPE` | `auto` | Default search type: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` |
+| `SEARCH_DEFAULT_TYPE` | `deep` | Default search type: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` |
 | `SEARCH_DEFAULT_LIMIT` | `10` | Default result limit (1–20) |
-| `SEARCH_TIMEOUT_SECONDS` | `10` | Search timeout in seconds |
-| `FETCH_TIMEOUT_SECONDS` | `15` | Page fetch timeout in seconds |
+| `SEARCH_TIMEOUT_SECONDS` | `25` | Search timeout in seconds |
+| `FETCH_TIMEOUT_SECONDS` | `30` | Page fetch timeout in seconds |
 | `FETCH_MAX_CONTENT_LENGTH` | `10000` | Max characters extracted per page |
 | `FETCH_TOKEN_BUDGET` | `8000` | Token budget per page |
 | `BROWSER_ENABLED` | `true` | Enable stealth browser engine |

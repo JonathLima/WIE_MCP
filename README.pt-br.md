@@ -36,10 +36,13 @@ Agente de IA (Claude, Cursor, Zed...)
         ▼
    SearXNG (local)              ← porta 8080
    ├── google
-   ├── duckduckgo
    ├── bing
-   ├── wikipedia
-   └── startpage
+   ├── duckduckgo
+   ├── brave
+   ├── qwant
+   ├── github
+   ├── hackernews
+   └── arxiv
         │
         ▼
       Internet
@@ -165,11 +168,49 @@ pip install -r requirements.txt
 | VS Code + Cline | `.vscode/mcp.json` |
 | LM Studio | Settings → MCP Servers |
 
+### Forçando o WIE como Buscador Web Padrão em CLIs de IA
+
+Para garantir que CLIs de desenvolvimento com IA (**Claude Code**, **Antigravity CLI**, **Gemini CLI**, **Cursor**) utilizem o WIE automaticamente em vez das buscas nativas ou genéricas:
+
+#### 1. Claude Code (`claude`)
+Registre o WIE via HTTP:
+```bash
+claude mcp add --transport http WIE http://localhost:8000/mcp
+```
+Para bloquear as ferramentas de busca nativas do Claude e garantir 100% de uso do WIE:
+```bash
+claude --disallowed-tools WebSearch,WebFetch
+```
+Ou adicione diretriz obrigatória em `~/.claude/CLAUDE.md` (ou `./CLAUDE.md` no projeto):
+```markdown
+## Web Research Protocol (MANDATORY)
+- SEMPRE utilize as ferramentas do servidor MCP WIE (`web_search`, `fetch_page`, `browser_navigate`) para buscas na internet, documentações e scraping.
+- Para sites com anti-bot ou renderização dinâmica (Reddit, Cloudflare, SPAs), use `browser_navigate` e `browser_snapshot` para carregar o DOM completo.
+```
+
+#### 2. Antigravity CLI e Gemini CLI
+Adicione no arquivo `~/.gemini/config/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "WIE": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+Defina a prioridade obrigatória no `~/.gemini/config/GEMINI.md` ou `./AGENTS.md`:
+```markdown
+## Protocolo de Busca e Pesquisa Web (OBRIGATÓRIO)
+- SEMPRE priorize o MCP WIE (`web_search`, `fetch_page`, `browser_navigate`) para pesquisas na internet e extração de páginas.
+- Para páginas protegidas por Cloudflare ou SPAs dinâmicas (Reddit, Twitter, etc.), utilize o navegador stealth (`browser_navigate`).
+```
+
 ---
 
 ## Ferramentas disponíveis
 
-O WIE expõe **6 ferramentas MCP**:
+O WIE expõe **13 ferramentas MCP** (6 ferramentas de busca e extração de conteúdo + 7 ferramentas do navegador stealth interativo):
 
 ### `web_search` — busca geral
 
@@ -194,7 +235,7 @@ Busca com expansão de queries, filtros por domínio, datas, categorias e modos 
 ```python
 web_search_advanced(
     query="impacto de LLMs no desenvolvimento de software",
-    search_type="deep",              # ver tabela abaixo
+    search_type="deep",              # ver tabela abaixo (padrão: "deep")
     num_results=15,                  # padrão: 10
     category="research_paper",       # ver categorias abaixo
     include_domains=["arxiv.org"],   # apenas esses domínios
@@ -217,10 +258,10 @@ web_search_advanced(
 |------|-------------------|-----------|------------|-----|
 | `instant` | 1 | ❌ | ❌ | Respostas ultra-rápidas, top 3 |
 | `fast` | 1 | ❌ | ❌ | Busca simples e rápida |
-| `auto` | 1 | ✅ | ✅ | **Padrão** — melhor equilíbrio |
-| `deep_lite` | 3 | ✅ | ✅ | Pesquisa moderada |
-| `deep` | 5 | ✅ | ✅ | Pesquisa completa |
-| `deep_reasoning` | 7 | ✅ | ✅ | Investigação complexa |
+| `auto` | 1 | ✅ | ✅ | Busca de passada única com reranking |
+| `deep_lite` | 3 | ✅ | ✅ | Pesquisa moderada multi-query |
+| `deep` | 5 | ✅ | ✅ | **Padrão** — Pesquisa completa multi-query |
+| `deep_reasoning` | 7 | ✅ | ✅ | Investigação exaustiva e complexa |
 
 **Categorias (`category`):**
 
@@ -380,14 +421,14 @@ Todas as variáveis são configuradas no arquivo `.env`:
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
 | `SEARXNG_HOST` | `http://searxng:8080` | URL interna do SearXNG |
-| `SEARXNG_ENGINES` | `google,duckduckgo,bing,wikipedia,startpage` | Motores ativos (separados por vírgula) |
+| `SEARXNG_ENGINES` | `google,bing,duckduckgo,brave,qwant,github,hackernews,arxiv` | Motores ativos (separados por vírgula) |
 | `SEARXNG_DEFAULT_CATEGORY` | `general` | Categoria padrão quando não especificada |
 | `SEARXNG_SAFESEARCH` | `0` | Nível de safe search: `0`, `1` ou `2` |
 | `SEARXNG_SECRET` | *(obrigatório)* | Chave secreta do SearXNG — **troque antes de usar** |
-| `SEARCH_DEFAULT_TYPE` | `auto` | Tipo de busca padrão: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` |
+| `SEARCH_DEFAULT_TYPE` | `deep` | Tipo de busca padrão: `instant`, `fast`, `auto`, `deep_lite`, `deep`, `deep_reasoning` |
 | `SEARCH_DEFAULT_LIMIT` | `10` | Limite padrão de resultados (1–20) |
-| `SEARCH_TIMEOUT_SECONDS` | `10` | Timeout de busca em segundos |
-| `FETCH_TIMEOUT_SECONDS` | `15` | Timeout de fetch de página em segundos |
+| `SEARCH_TIMEOUT_SECONDS` | `25` | Timeout de busca em segundos |
+| `FETCH_TIMEOUT_SECONDS` | `30` | Timeout de fetch de página em segundos |
 | `FETCH_MAX_CONTENT_LENGTH` | `10000` | Máximo de caracteres extraídos por página |
 | `FETCH_TOKEN_BUDGET` | `8000` | Orçamento de tokens por página |
 | `BROWSER_ENABLED` | `true` | Habilita o motor de navegação stealth |

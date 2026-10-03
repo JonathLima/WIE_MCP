@@ -82,7 +82,7 @@ def _should_discard_status(sc: int) -> bool:
 _CHALLENGE_MAX_LEN = 20000
 
 _CHALLENGE_PATTERNS: dict[str, tuple[str, ...]] = {
-    "cloudflare": ("cf-browser-verification", "challenge-platform", "just a moment", "checking your browser", "__cf_chl", "attention required", "one more step"),
+    "cloudflare": ("cf-browser-verification", "challenge-platform", "just a moment", "checking your browser", "__cf_chl", "attention required", "one more step", "prove your humanity"),
     "turnstile": ("challenges.cloudflare.com/turnstile", "cf-turnstile"),
     "recaptcha": ("g-recaptcha", "recaptcha/api", "www.google.com/recaptcha", "recaptcha-box", "recaptcha_challenge"),
     "hcaptcha": ("h-captcha", "hcaptcha.com", "challenge-container"),
@@ -112,6 +112,21 @@ def _is_challenge_html(html: str) -> str | None:
         if needle in title:
             return "http-error"
     return None
+
+def _is_spa_or_empty_shell(html: str) -> bool:
+    """Return True if html is an unhydrated client-rendered SPA/JS shell
+    (e.g. Reddit, Twitter, React, Vue) with negligible substantive text."""
+    if not html:
+        return True
+    lowered = html.lower()
+    is_client_rendered = any(marker in lowered for marker in (
+        "shreddit-", "reddit-app", "id=\"root\"", "id=\"app\"", "id=\"__next\"", "id=\"__nuxt\""
+    ))
+    if is_client_rendered:
+        probe = extract_readability_content(html)
+        if len(probe.get("content", "").strip()) < 80:
+            return True
+    return False
 
 _rate_lock: asyncio.Lock | None = None
 _last_request: dict[str, float] = {}
@@ -274,12 +289,27 @@ async def _fetch_with_curl_cffi(url: str, config: FetchConfig, language: str = "
         raise ImportError("curl_cffi not available")
 
     accept_lang = "*" if language == "auto" else f"{language},{language}-*;q=0.9,*;q=0.5"
-    async with AsyncSession(impersonate=random.choice(CHROME_IMPERSONATIONS)) as s:
+    impersonate_target = random.choice(CHROME_IMPERSONATIONS)
+
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": accept_lang,
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Sec-Ch-Ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+    }
+
+    async with AsyncSession(impersonate=impersonate_target) as s:
         response = await s.get(
             url,
             timeout=config.timeout,
             allow_redirects=True,
-            headers={"Accept-Language": accept_lang},
+            headers=headers,
         )
 
         return response.text, response.status_code, response.headers.get("content-type", "")
@@ -371,6 +401,9 @@ async def _build_fetch_response(request: FetchRequest, config: FetchConfig, lang
             fetch_method = "curl_cffi"
             if _should_discard_status(status_code) or _is_challenge_html(html_content):
                 logger.warning("curl_cffi got status %d or challenge for %s, discarding", status_code, url_str)
+                html_content = None
+            elif html_content and _is_spa_or_empty_shell(html_content):
+                logger.info("curl_cffi returned unhydrated dynamic/SPA shell for %s, discarding for browser fallback", url_str)
                 html_content = None
         except Exception as exc:
             logger.warning("curl_cffi failed for %s: %s", url_str, exc)

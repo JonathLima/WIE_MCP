@@ -21,6 +21,8 @@ class BrowserActions:
         timeout_ms = timeout_seconds * 1000
         await self.page.goto(url, wait_until=wait_until, timeout=timeout_ms)
         await self.page.wait_for_timeout(1000)
+        from src.browser.engine import StealthBrowserEngine
+        await StealthBrowserEngine.handle_turnstile_challenge(self.page, max_wait_seconds=8.0)
         title = await self.session.current_title()
         current_url = await self.session.current_url()
         return f"Successfully navigated to: {current_url}\n**Title:** {title}"
