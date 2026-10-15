@@ -95,3 +95,16 @@ async def test_server_browser_close():
             res = await browser_close()
             assert "closed" in res.lower()
 
+
+@pytest.mark.asyncio
+async def test_server_all_tools_have_descriptions_and_instructions():
+    from src.server import mcp
+
+    assert mcp.instructions, "FastMCP server must have instructions set"
+    tools = await mcp.list_tools()
+    assert len(tools) >= 13, f"Expected at least 13 tools, found {len(tools)}"
+    for tool in tools:
+        assert tool.description, f"Tool {tool.name} has no description"
+        assert len(tool.description.strip()) >= 20, f"Tool {tool.name} description is too short"
+
+
